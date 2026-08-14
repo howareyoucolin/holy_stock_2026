@@ -7,18 +7,18 @@ containerized — there is no local `mysql` service.
 
 - **PHP 8.2 + Apache** (`php:8.2-apache`, document root `public/`)
 - **Remote MySQL** over `pdo_mysql`, credentials from the environment
-- **Docker Compose** (single `php` service, host port `8900`)
+- **Docker Compose** (single `php` service, host port `8300`)
 
 ## Quick start
 
 ```bash
 cp .env.example .env       # then fill in the remote MySQL host/user/password
 docker compose up -d --build
-open http://localhost:8900
+open http://localhost:8300
 ```
 
-The home page reports whether the remote connection succeeded. Same check from
-the CLI:
+The home page is a placeholder hello world. To check the remote MySQL
+connection, open `/health.php` in the browser or run it from the CLI:
 
 ```bash
 docker exec holy_stocks_php php /var/www/html/public/health.php
@@ -51,11 +51,11 @@ a host pattern that matches (`'user'@'%'` or similar).
 
 ```
 Dockerfile             php:8.2-apache, pdo_mysql, doc root -> public/
-docker-compose.yml     php service only, :8900
+docker-compose.yml     php service only, :8300
 php.ini                upload / memory limits
 .env.example           remote MySQL settings to copy into .env
 data/support/db.php    connect_pdo() — shared PDO factory
-public/index.php       home page + connection status
+public/index.php       home page (hello world placeholder)
 public/health.php      plain-text connectivity check
 public/migrate.php     migration runner
 public/migrates/       one file per schema change

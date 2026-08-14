@@ -5,7 +5,7 @@ declare(strict_types=1);
 // Plain-text connectivity check, handy from the CLI:
 //   docker exec holy_stocks_php php /var/www/html/public/health.php
 
-require_once dirname(__DIR__) . '/data/support/db.php';
+require_once __DIR__ . '/bootstrap.php';
 
 header('Content-Type: text/plain; charset=utf-8');
 

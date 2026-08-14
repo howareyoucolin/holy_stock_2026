@@ -1,0 +1,4 @@
+# On DreamHost, data/ is synced inside the web root (public/ contents become the
+# site root), so block direct HTTP access to these support scripts. Ignored in
+# local Docker, where data/ already sits outside the document root.
+Require all denied
