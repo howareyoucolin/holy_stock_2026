@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { askAgents } from '@/lib/agents'
+import { askAgents, DEFAULT_EFFORT, EFFORT_LEVELS } from '@/lib/agents'
 
 // child_process needs the Node runtime, not the edge one.
 export const runtime = 'nodejs'
@@ -29,8 +29,17 @@ export async function POST(request) {
     )
   }
 
+  const requested = String(body?.effort ?? DEFAULT_EFFORT)
+
+  if (!EFFORT_LEVELS.includes(requested)) {
+    return NextResponse.json(
+      { error: `Effort must be one of: ${EFFORT_LEVELS.join(', ')}.` },
+      { status: 400 },
+    )
+  }
+
   try {
-    const answers = await askAgents(question)
+    const answers = await askAgents(question, requested)
 
     return NextResponse.json({ question, ...answers })
   } catch (error) {

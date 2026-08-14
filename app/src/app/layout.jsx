@@ -1,4 +1,3 @@
-import Link from 'next/link'
 import './globals.css'
 
 export const metadata = {
@@ -6,20 +5,14 @@ export const metadata = {
   description: 'Local console for asking AI agents and publishing takeaways.',
 }
 
+// The shell is a fixed two-column frame; each page supplies its own
+// <aside className="sidebar"> and <main className="content"> so that the ask
+// screen can keep its form and its results in one client component.
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        <main>
-          <header>
-            <h1>Agent Console</h1>
-            <nav>
-              <Link href="/">Ask</Link>
-              <Link href="/learnings">Learnings</Link>
-            </nav>
-          </header>
-          {children}
-        </main>
+        <div className="shell">{children}</div>
       </body>
     </html>
   )

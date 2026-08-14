@@ -1,188 +1,782 @@
+/*
+ * Visual language: raised controls (buttons, cards) against recessed wells
+ * (inputs, answer panels). Depth comes from three stacked cues on every raised
+ * surface — a specular highlight on the top edge, a hairline ring, and a layered
+ * shadow — rather than from one heavy drop shadow.
+ *
+ * Palette is taken from this project's VS Code theme (.vscode/settings.json):
+ * Monokai customized to dark plum. Dark-only, because that theme has no light
+ * variant to mirror.
+ *
+ *   #1a0f1a  editor.background           canvas
+ *   #1e0f13  sideBar.background          canvas gradient end
+ *   #241424  editorGutter / suggestWidget  raised surfaces
+ *   #651353  titleBar / activityBar / tab.active   chrome and borders
+ *   #d72171  editor.selectionBackground  accent
+ *   #00ff88  gutter.added                ok
+ *   #ff4444  gutter.deleted              fail
+ *   #ffaa00  gutter.modified             warn
+ *   #f8f8f2  Monokai foreground          text
+ */
+
 :root {
-  color-scheme: light dark;
-  --line: rgba(128, 128, 128, 0.35);
-  --panel: rgba(128, 128, 128, 0.08);
+  color-scheme: dark;
+
+  --bg: #1a0f1a;
+  --bg-2: #1e0f13;
+  --surface: #241424;
+  --surface-2: #1f1120;
+  --well: #150c16;
+  --chrome: #651353;
+
+  --text: #f8f8f2;
+  --text-soft: #cbbcc7;
+  --text-muted: #9b8794;
+
+  --border: rgba(101, 19, 83, 0.75);
+  --border-strong: rgba(215, 33, 113, 0.55);
+
+  --accent: #d72171;
+  --accent-2: #ef4a8f;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(215, 33, 113, 0.16);
+
+  --ok: #00ff88;
+  --fail: #ff4444;
+  --warn: #ffaa00;
+
+  /* Top-edge highlight that makes a surface read as lit from above. */
+  --lip: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --ring: 0 0 0 1px var(--border);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.55), 0 18px 40px -10px rgba(0, 0, 0, 0.7);
+  --shadow-press: 0 1px 1px rgba(0, 0, 0, 0.6);
+  --well-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(101, 19, 83, 0.5);
+
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-sm: 9px;
 }
 
 * {
   box-sizing: border-box;
 }
 
+/*
+ * No focus ring of any kind, by preference — neither an outline nor a box-shadow
+ * substitute. Focused elements look identical to unfocused ones.
+ *
+ * Trade-off: keyboard tabbing has no visual position cue at all.
+ */
+:focus,
+:focus-visible,
+:focus-within {
+  outline: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  /* Fixed so the wash does not slide against the grain while scrolling. */
+  background:
+    radial-gradient(1100px 520px at 50% -220px, var(--accent-soft), transparent 70%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+  background-attachment: fixed;
+  min-height: 100%;
+}
+
 body {
   margin: 0;
-  font: 16px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  min-height: 100vh;
+  color: var(--text);
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 15.5px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-main {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 4rem;
+/*
+ * Fine grain over the background wash, below all content. Kept at very low
+ * opacity — enough to stop large areas reading as flat digital fill, not enough
+ * to touch text crispness.
+ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E");
 }
 
-header {
+.app-shell {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- shell: fixed sidebar, scrolling content ---------- */
+
+/*
+ * Two fixed columns filling the viewport. The shell itself never scrolls; each
+ * column owns its own scrollbar, so a long answer cannot push the question form
+ * off screen.
+ */
+.shell {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 100vh;
+}
+
+@media (min-width: 900px) {
+  .shell {
+    grid-template-columns: 40% 60%;
+    height: 100vh;
+    /* dvh keeps this honest when mobile browser chrome hides. */
+    height: 100dvh;
+    overflow: hidden;
+  }
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+@media (min-width: 900px) {
+  .sidebar {
+    height: 100%;
+    overflow-y: auto;
+    border-bottom: 0;
+    border-right: 1px solid var(--border-strong);
+  }
+}
+
+/* Brand + nav, pinned while the rest of the sidebar scrolls under it. */
+.sidebar-head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 1.5rem;
-  align-items: baseline;
+  gap: 0.75rem 1.25rem;
+  align-items: center;
   justify-content: space-between;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 1.5rem;
+  padding: 0.7rem clamp(1rem, 1.6vw, 1.5rem);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  background: color-mix(in srgb, var(--chrome) 74%, transparent);
+  border-bottom: 1px solid var(--border-strong);
+  box-shadow: var(--lip), 0 8px 24px -14px rgba(0, 0, 0, 0.85);
 }
 
-header nav {
+/* ---------- brand and nav (inside the sidebar head) ---------- */
+
+.brand {
   display: flex;
-  gap: 1rem;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
 }
 
-h1 {
-  font-size: 1.5rem;
-  margin: 0;
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.brand-text strong {
+  font-size: 0.95rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+
+.brand-text span {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Segmented control: a dark well cut into the plum bar, holding one lit pill. */
+.tabs {
+  display: flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+.tab {
+  padding: 0.32rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.87rem;
+  font-weight: 550;
+  color: rgba(255, 255, 255, 0.66);
+  text-decoration: none;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.tab:hover {
+  color: #fff;
+}
+
+/* Active tab picks up the editor's selection magenta. */
+.tab[aria-current='page'] {
+  color: #fff;
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), var(--shadow-sm);
+}
+
+.sidebar-body {
+  display: grid;
+  align-content: start;
+  gap: 1.1rem;
+  padding: 1.25rem clamp(1rem, 1.6vw, 1.5rem) 2.5rem;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  min-width: 0;
+  padding: 1.5rem clamp(1rem, 2vw, 2rem) 2.5rem;
+}
+
+@media (min-width: 900px) {
+  .content {
+    height: 100%;
+    overflow-y: auto;
+  }
+}
+
+/*
+ * Children must not shrink. In a fixed-height column flex container, an item
+ * whose own overflow is not `visible` (our <pre>, which scrolls horizontally)
+ * gets a zero min-height and so collapses instead of overflowing — which would
+ * squash long answers rather than scroll this panel.
+ */
+.content > * {
+  flex-shrink: 0;
+}
+
+/* The waiting state should fill the tall panel rather than float at the top. */
+.content > .placeholder {
+  flex: 1 1 auto;
+}
+
+/* ---------- layout ---------- */
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.015em;
 }
 
 h2 {
-  font-size: 1.15rem;
-  margin: 2rem 0 0.75rem;
+  font-size: 1.2rem;
+  font-weight: 650;
+  margin: 2.25rem 0 0.9rem;
 }
 
 h3 {
-  font-size: 1rem;
+  font-size: 0.97rem;
+  font-weight: 650;
   margin: 0 0 0.5rem;
 }
 
 a {
-  color: #2563eb;
+  color: var(--accent-2);
+  text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  text-underline-offset: 2px;
 }
 
-blockquote {
-  margin: 0 0 1rem;
-  padding: 0.6rem 0.9rem;
-  border-left: 3px solid var(--line);
-  background: var(--panel);
+.lede {
+  max-width: 60ch;
+  color: var(--text-soft);
+  margin: 0 0 1.75rem;
 }
+
+/* ---------- raised surfaces ---------- */
+
+.card {
+  position: relative;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+  box-shadow: var(--lip), var(--ring), var(--shadow-md);
+}
+
+.card-pad {
+  padding: 1.4rem 1.5rem 1.6rem;
+}
+
+/* Faint sheen across the upper edge, so wide cards are not uniformly flat. */
+.card::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 45%;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent);
+  pointer-events: none;
+}
+
+.card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+/* ---------- form controls ---------- */
 
 label {
   display: block;
+  font-size: 0.8rem;
   font-weight: 600;
-  font-size: 0.9rem;
-  margin: 1rem 0 0.35rem;
+  letter-spacing: 0.01em;
+  color: var(--text-soft);
+  margin: 1.1rem 0 0.4rem;
 }
 
 label.checkbox {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-weight: 400;
+  gap: 0.55rem;
+  font-weight: 450;
+  font-size: 0.9rem;
+  color: var(--text-soft);
+  cursor: pointer;
 }
 
 label.checkbox input {
   width: auto;
   margin: 0;
+  accent-color: var(--accent);
 }
 
+/* Recessed: inputs read as cut into the surface, the inverse of buttons. */
 textarea,
 input[type='text'] {
   width: 100%;
-  padding: 0.7rem;
+  padding: 0.7rem 0.8rem;
   font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 1px solid rgba(128, 128, 128, 0.5);
-  border-radius: 6px;
+  color: var(--text);
+  background: var(--well);
+  border: 0;
+  border-radius: var(--radius);
+  box-shadow: var(--well-shadow);
   resize: vertical;
 }
 
+textarea::placeholder,
+input::placeholder {
+  color: var(--text-muted);
+}
+
+/* Raised: gradient body, lit top edge, and a real press on :active. */
 button {
-  margin-top: 0.9rem;
-  padding: 0.55rem 1.1rem;
+  margin-top: 1.1rem;
+  padding: 0.6rem 1.2rem;
   font: inherit;
+  font-size: 0.92rem;
   font-weight: 600;
-  color: #fff;
-  background: #2563eb;
+  color: var(--accent-ink);
+  background: linear-gradient(180deg, var(--accent-2), var(--accent));
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius);
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 0 0 1px color-mix(in srgb, var(--accent) 70%, black 30%), var(--shadow-md);
+  transition: transform 0.1s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
 
 button:hover:not(:disabled) {
-  background: #1d4ed8;
+  filter: brightness(1.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 0 0 1px color-mix(in srgb, var(--accent) 70%, black 30%), var(--shadow-lg);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+  filter: brightness(0.97);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22), var(--shadow-press);
 }
 
 button:disabled {
-  opacity: 0.5;
+  color: var(--text-muted);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  box-shadow: var(--lip), var(--ring);
   cursor: not-allowed;
 }
 
-pre {
-  white-space: pre-wrap;
-  word-wrap: break-word;
+/* ---------- select ---------- */
+
+/* Inline label + control pair, sitting on the same row as a card title. */
+.field-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.field-inline label {
   margin: 0;
-  padding: 0.8rem;
-  background: var(--panel);
-  border: 1px solid rgba(128, 128, 128, 0.3);
-  border-radius: 6px;
+  white-space: nowrap;
+}
+
+select {
+  /* Drop the platform chrome so the control matches the rest of the surface,
+     then draw our own chevron. */
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0.34rem 1.9rem 0.34rem 0.65rem;
   font: inherit;
+  font-size: 0.87rem;
+  font-weight: 550;
+  color: var(--text);
+  background-color: var(--well);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239b8794' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-article {
-  padding: 1rem 0;
-  border-bottom: 1px solid rgba(128, 128, 128, 0.25);
+select:hover:not(:disabled) {
+  border-color: var(--border-strong);
 }
 
-article h3 {
-  margin-bottom: 0.2rem;
+select:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
-article p {
-  margin: 0.2rem 0;
+/* ---------- flat variant ---------- */
+
+/*
+ * Flat control styling with no surface of its own: no panel background, border,
+ * or elevation. The controls sit directly on whatever is behind them, so the
+ * raised result cards opposite carry all the visual weight.
+ */
+
+/* Inputs here sit level with the surface instead of being cut into it. */
+.card-flat textarea,
+.card-flat input[type='text'] {
+  background: var(--well);
+  border: 1px solid var(--border);
+  box-shadow: none;
 }
+
+/* Solid fill, no gradient or lit edge, and no press displacement. */
+.card-flat button {
+  background: var(--accent);
+  box-shadow: none;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.card-flat button:hover:not(:disabled) {
+  filter: none;
+  background: color-mix(in srgb, var(--accent) 88%, black);
+  box-shadow: none;
+}
+
+.card-flat button:active:not(:disabled) {
+  transform: none;
+  filter: none;
+  background: color-mix(in srgb, var(--accent) 78%, black);
+  box-shadow: none;
+}
+
+.card-flat button:disabled {
+  background: var(--well);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+/* ---------- ask screen ---------- */
+
+/* Waiting state for the results column, before anything has been asked. */
+.placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 280px;
+  padding: 2rem 2.25rem;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--well);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--well-shadow);
+}
+
+.placeholder p {
+  margin: 0;
+  max-width: 34ch;
+}
+
+.placeholder strong {
+  color: var(--text-soft);
+  font-weight: 600;
+}
+
+/* Half-width column is too narrow for two answers abreast, so stack them. */
+.answer-stack {
+  display: grid;
+  gap: 1.1rem;
+  min-width: 0;
+}
+
+.pill-run {
+  color: var(--text-muted);
+  background: var(--well);
+}
+
+.skeleton-block {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.85rem 0.95rem;
+  background: var(--well);
+  border-radius: var(--radius);
+  box-shadow: var(--well-shadow);
+}
+
+.skeleton {
+  height: 0.7rem;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--surface) 35%, var(--well)) 0%,
+    color-mix(in srgb, var(--surface) 90%, var(--well)) 50%,
+    color-mix(in srgb, var(--surface) 35%, var(--well)) 100%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+/* ---------- agent answers ---------- */
 
 .answers {
   display: grid;
-  gap: 1rem;
+  gap: 1.1rem;
   grid-template-columns: 1fr;
   margin-top: 2rem;
 }
 
-@media (min-width: 720px) {
+@media (min-width: 760px) {
   .answers {
     grid-template-columns: 1fr 1fr;
   }
 }
 
+/* Flat like the ask side: no panel of its own. The recessed <pre> below carries
+   the answer, so the card needs no border or background to contain it. */
 .answer-card {
   min-width: 0;
+  padding: 0;
   border-bottom: 0;
 }
 
-.publish {
-  margin-top: 2rem;
-  padding: 1.25rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+.answer-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.7rem;
 }
 
-.publish h2 {
-  margin-top: 0;
+.answer-head h3 {
+  margin: 0;
+  flex: 1;
 }
+
+/* Bare glyph: no chip, tint, or shadow — colour alone separates the agents. */
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  background: none;
+  box-shadow: none;
+}
+
+.avatar svg {
+  width: 18px;
+  height: 18px;
+}
+
+.avatar[data-agent='claude'] {
+  color: #e08a5c;
+}
+
+.avatar[data-agent='codex'] {
+  color: #d09ac6;
+}
+
+.pill {
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: var(--ring);
+}
+
+.pill-ok {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
+.pill-fail {
+  color: var(--fail);
+  background: color-mix(in srgb, var(--fail) 12%, transparent);
+}
+
+/* Answers sit in a well, so the text reads as content held by the card. */
+pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+  padding: 0.85rem 0.95rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  color: var(--text-soft);
+  background: var(--well);
+  border-radius: var(--radius);
+  box-shadow: var(--well-shadow);
+  overflow-x: auto;
+}
+
+blockquote {
+  margin: 0 0 1rem;
+  padding: 0.7rem 1rem;
+  color: var(--text-soft);
+  background: var(--well);
+  border-radius: var(--radius);
+  box-shadow: var(--well-shadow);
+}
+
+/* ---------- learnings list ---------- */
+
+.stack {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.row {
+  display: block;
+  padding: 1.05rem 1.25rem;
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.14s ease, box-shadow 0.18s ease;
+}
+
+/* Lift on hover: the strongest single signal that a surface is a physical thing. */
+.row:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--lip), var(--ring), var(--shadow-lg);
+}
+
+.row-title {
+  margin: 0 0 0.15rem;
+  font-size: 1rem;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.row-meta {
+  margin: 0 0 0.4rem;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.row-body {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.93rem;
+}
+
+.section {
+  margin-top: 1.6rem;
+}
+
+/* ---------- misc ---------- */
 
 .banner {
-  padding: 0.7rem 0.9rem;
-  border-radius: 6px;
-  background: var(--panel);
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  color: var(--text);
+  background: color-mix(in srgb, var(--fail) 9%, var(--surface));
+  box-shadow: var(--lip), 0 0 0 1px color-mix(in srgb, var(--fail) 28%, transparent),
+    var(--shadow-sm);
 }
 
 .tag {
-  margin-left: 0.4rem;
-  padding: 0.05rem 0.4rem;
-  font-size: 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 4px;
+  margin-left: 0.45rem;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--well);
+  box-shadow: var(--ring);
+  vertical-align: middle;
+}
+
+code {
+  padding: 0.1rem 0.35rem;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.87em;
+  background: var(--well);
+  box-shadow: var(--ring);
+}
+
+.empty {
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
 }
 
 .muted {
-  opacity: 0.7;
-  font-size: 0.9rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
 }
 
 .small {
@@ -190,9 +784,42 @@ article p {
 }
 
 .ok {
-  color: #158a4a;
+  color: var(--ok);
 }
 
 .fail {
-  color: #c02626;
+  color: var(--fail);
+}
+
+/* Spinner for the one genuinely slow action in the app. */
+.spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 0.5rem;
+  vertical-align: -2px;
+  border: 2px solid color-mix(in srgb, var(--accent-ink) 35%, transparent);
+  border-top-color: var(--accent-ink);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .row:hover {
+    transform: none;
+  }
 }

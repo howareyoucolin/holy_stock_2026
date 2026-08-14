@@ -5,8 +5,11 @@ Two halves with one database:
 - **`public/`** — a public PHP site that **only reads** MySQL and shows learnings
   to visitors. This is what gets deployed.
 - **`app/`** — a **local-only** Next.js console for asking AI agents questions
-  and writing the takeaways to the same remote MySQL. Never deployed. It also
-  previews the saved rows, so the PHP site does not need to run locally.
+  and browsing the learnings already in the database. Never deployed. It reads
+  the same rows, so the PHP site does not need to run locally.
+
+  Note: the publish form was removed, so new rows are no longer created from the
+  UI. `POST /api/learnings` still exists if you want to add one.
 
 ```
    app/ (local, Next.js)                     public/ (deployed PHP)
@@ -127,8 +130,8 @@ deploy/                DreamHost deploy (see deploy/README.md)
 ## Database
 
 One table, `learnings`: `title`, `question`, `takeaway`, `claude_answer`,
-`codex_answer`, `is_published`, timestamps. `app/` writes rows and previews all of
-them; `public/` reads only rows where `is_published = 1`.
+`codex_answer`, `is_published`, timestamps. `app/` lists all of them; `public/`
+reads only rows where `is_published = 1`.
 
 ## Migrations
 

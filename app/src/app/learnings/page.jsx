@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import SidebarHead from '@/components/SidebarHead'
 import { listLearnings } from '@/lib/db'
 
 export const runtime = 'nodejs'
@@ -30,38 +31,49 @@ export default async function LearningsPage() {
     error = dbError.message
   }
 
-  if (error) {
-    return (
-      <>
-        <h2>Learnings</h2>
-        <p className="banner fail">
-          Could not reach the database: {error}
-        </p>
-        <p className="muted">
-          Open the tunnel with <code>npm run tunnel</code>, then reload.
-        </p>
-      </>
-    )
-  }
-
   return (
     <>
-      <h2>Learnings</h2>
+      <aside className="sidebar">
+        <SidebarHead />
 
-      {learnings.length === 0 ? (
-        <p className="muted">Nothing saved yet.</p>
-      ) : (
-        learnings.map((learning) => (
-          <article key={learning.id}>
-            <h3>
-              <Link href={`/learnings/${learning.id}`}>{learning.title}</Link>
-              {!learning.is_published && <span className="tag">draft</span>}
-            </h3>
-            <p className="muted">{new Date(learning.created_at).toLocaleString()}</p>
-            <p>{excerpt(learning.takeaway)}</p>
-          </article>
-        ))
-      )}
+        <div className="sidebar-body">
+          <p className="lede">
+            {error
+              ? 'Everything published to the remote database.'
+              : `Everything published to the remote database — ${learnings.length} ${
+                  learnings.length === 1 ? 'entry' : 'entries'
+                }.`}
+          </p>
+
+          {error && (
+            <p className="banner">
+              <strong>Could not reach the database.</strong> {error} Open the tunnel with{' '}
+              <code>npm run tunnel</code>, then reload.
+            </p>
+          )}
+        </div>
+      </aside>
+
+      <main className="content">
+        {error ? null : learnings.length === 0 ? (
+          <div className="placeholder">
+            <p>Nothing saved yet.</p>
+          </div>
+        ) : (
+          <div className="stack">
+            {learnings.map((learning) => (
+              <Link key={learning.id} href={`/learnings/${learning.id}`} className="card row">
+                <h3 className="row-title">
+                  {learning.title}
+                  {!learning.is_published && <span className="tag">draft</span>}
+                </h3>
+                <p className="row-meta">{new Date(learning.created_at).toLocaleString()}</p>
+                <p className="row-body">{excerpt(learning.takeaway)}</p>
+              </Link>
+            ))}
+          </div>
+        )}
+      </main>
     </>
   )
 }

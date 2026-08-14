@@ -1,8 +1,9 @@
 # Agent Console (local only)
 
-A Next.js app for asking Claude and Codex a question and publishing the takeaway
-straight to the remote MySQL. **Never deployed** — `deploy/deploy.sh` only syncs
-`public/` and `data/`, so nothing here reaches the public server.
+A Next.js app for asking Claude and Codex a question side by side, and for
+browsing the learnings already in the remote MySQL. **Never deployed** —
+`deploy/deploy.sh` only syncs `public/` and `data/`, so nothing here reaches the
+public server.
 
 ## Why this is a Node app and not part of the PHP site
 
@@ -26,24 +27,27 @@ itself, so no `nvm use` is needed. To work in this directory directly, run
 old for Next.
 
 The PHP site does **not** need to be running: `/learnings` reads the same rows
-this app writes.
+the public site serves.
 
 ## Layout
 
 ```
-src/app/page.jsx              ask + publish screen
+src/app/page.jsx              ask screen
 src/app/learnings/            list and detail, reading the database directly
 src/app/api/ask/route.js      runs both CLIs concurrently
 src/app/api/learnings/route.js  list + insert
 src/app/api/health/route.js   database reachability + whether each CLI was found
-src/components/               AskConsole, AgentAnswer, PublishForm
+src/components/               AskConsole, AgentAnswer, PendingAnswer, SidebarHead
 src/lib/agents.js             spawns the claude / codex CLIs
 src/lib/db.js                 mysql2 pool, credentials from the project-root .env
 ```
 
+There is no publish UI: `POST /api/learnings` still works, but nothing in the
+interface calls it, so rows are only created by hitting that endpoint directly.
+
 The `/learnings` pages are server components that call `src/lib/db.js` directly —
-no API round trip. The route handlers exist for the browser-driven actions
-(asking, publishing) that the client component needs.
+no API round trip. The route handlers exist for the browser-driven action the
+client component needs: asking.
 
 ## Notes
 

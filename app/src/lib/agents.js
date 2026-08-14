@@ -6,6 +6,24 @@ import path from 'node:path'
 
 const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 300_000)
 
+// The levels `claude --effort` accepts.
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max']
+export const DEFAULT_EFFORT = 'medium'
+
+// Codex takes the same idea through a config override rather than a flag, and has
+// no equivalent of claude's top `max` tier — so that folds onto `xhigh`.
+const CODEX_EFFORT = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+  max: 'xhigh',
+}
+
+function normalizeEffort(effort) {
+  return EFFORT_LEVELS.includes(effort) ? effort : DEFAULT_EFFORT
+}
+
 // Resolving a CLI by name is not enough here. `codex` is installed under one
 // nvm-managed Node version's bin directory, and this app runs on a different
 // (newer) Node version, so that directory is not on PATH. Search PATH first,
@@ -131,16 +149,18 @@ function missing(name) {
   }
 }
 
-export async function askClaude(question) {
+export async function askClaude(question, effort = DEFAULT_EFFORT) {
   const bin = resolveBin('claude')
   if (!bin) return missing('claude')
 
-  return runCli({ bin, args: ['-p'], question })
+  return runCli({ bin, args: ['-p', '--effort', normalizeEffort(effort)], question })
 }
 
-export async function askCodex(question) {
+export async function askCodex(question, effort = DEFAULT_EFFORT) {
   const bin = resolveBin('codex')
   if (!bin) return missing('codex')
+
+  const codexEffort = CODEX_EFFORT[normalizeEffort(effort)]
 
   const outFile = path.join(tmpdir(), `holystocks-codex-${randomBytes(6).toString('hex')}.txt`)
 
@@ -149,6 +169,8 @@ export async function askCodex(question) {
     // read-only sandbox: a question submitted through the UI cannot change files.
     args: [
       'exec',
+      '-c',
+      `model_reasoning_effort=${codexEffort}`,
       '--sandbox',
       'read-only',
       '--skip-git-repo-check',
@@ -164,8 +186,12 @@ export async function askCodex(question) {
 }
 
 // Ask both agents at once; the request takes as long as the slower one.
-export async function askAgents(question) {
-  const [claude, codex] = await Promise.all([askClaude(question), askCodex(question)])
+export async function askAgents(question, effort = DEFAULT_EFFORT) {
+  const level = normalizeEffort(effort)
+  const [claude, codex] = await Promise.all([
+    askClaude(question, level),
+    askCodex(question, level),
+  ])
 
-  return { claude, codex }
+  return { effort: level, claude, codex }
 }
