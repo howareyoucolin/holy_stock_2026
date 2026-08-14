@@ -1,3 +1,5 @@
 .env
 public/config.php
 .DS_Store
+storage/ai-jobs/*
+!storage/ai-jobs/.gitkeep

@@ -22,6 +22,20 @@ $pageTitle = $pageTitle ?? 'holyStocks';
     th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid rgba(128,128,128,.25); }
     .ok { color: #158a4a; }
     .fail { color: #c02626; }
+    .muted { opacity: .7; font-size: .9rem; }
+    textarea { width: 100%; box-sizing: border-box; padding: .7rem; font: inherit;
+               border: 1px solid rgba(128,128,128,.5); border-radius: 6px;
+               background: transparent; color: inherit; resize: vertical; }
+    button { margin-top: .75rem; padding: .55rem 1.1rem; font: inherit; font-weight: 600;
+             border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+    button:hover:not(:disabled) { background: #1d4ed8; }
+    button:disabled, textarea:disabled { opacity: .5; cursor: not-allowed; }
+    blockquote { margin: 0 0 1rem; padding: .6rem .9rem; border-left: 3px solid rgba(128,128,128,.5);
+                 background: rgba(128,128,128,.08); }
+    pre.answer { white-space: pre-wrap; word-wrap: break-word; padding: .9rem;
+                 border: 1px solid rgba(128,128,128,.3); border-radius: 6px;
+                 background: rgba(128,128,128,.08); font: inherit; }
+    hr { border: 0; border-top: 1px solid rgba(128,128,128,.35); margin: 2rem 0; }
 </style>
 </head>
 <body>

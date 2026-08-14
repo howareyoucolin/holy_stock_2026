@@ -15,4 +15,8 @@ require __DIR__ . '/parts/header.php';
     <a href="/health.php"><code>/health.php</code></a>.
 </p>
 
+<ul>
+    <li><a href="/ask.php">Ask AI Agents</a> &mdash; put a question to Claude and Codex, side by side</li>
+</ul>
+
 <?php require __DIR__ . '/parts/footer.php'; ?>
