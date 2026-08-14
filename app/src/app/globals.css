@@ -548,6 +548,20 @@ select:disabled {
   min-width: 0;
 }
 
+/* Section heading inside the results panel (Final answer / Answers / Review). */
+.section-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.76rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.content section + section {
+  margin-top: 0.5rem;
+}
+
 .model-tag {
   margin-left: 0.5rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

@@ -16,9 +16,20 @@
 #
 # Cursor model names: `cursor-agent models`.
 #
+# Cross-review: after every agent answers, they all review each other, then one
+# writes the final answer. Mark that one with `final=true`; otherwise the first
+# available agent in this file does it.
+#
+# Web access is ON by default — every CLI blocks the network in print mode, so
+# each is given the narrowest switch that allows search:
+#   claude  --allowedTools WebSearch WebFetch   (only those two tools)
+#   codex   -c tools.web_search=true
+#   cursor  --auto-review                       (stays in read-only ask mode)
+# Set `web=false` on a line to keep that agent offline.
+#
 # Read fresh on every request, so edits take effect without restarting the dev
 # server. If this file is missing, every supported agent is used.
 
-claude
-codex
-cursor model=gemini-3.7-flash-{effort} tiers=low,medium,high
+claude final=true web=true
+codex web=true
+cursor model=gemini-3.7-flash-{effort} tiers=low,medium,high web=true

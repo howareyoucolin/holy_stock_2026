@@ -4,8 +4,9 @@ Two halves with one database:
 
 - **`public/`** — a public PHP site that **only reads** MySQL and shows learnings
   to visitors. This is what gets deployed.
-- **`app/`** — a **local-only** Next.js console for asking AI agents questions
-  and browsing the learnings already in the database. Never deployed. It reads
+- **`app/`** — a **local-only** Next.js console that asks several AI agents a
+  question, has them cross-review each other, and synthesises a final answer. It
+  also browses the learnings already in the database. Never deployed. It reads
   the same rows, so the PHP site does not need to run locally.
 
   Note: the publish form was removed, so new rows are no longer created from the

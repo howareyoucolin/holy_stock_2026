@@ -32,11 +32,30 @@ function readStoredEffort() {
   }
 }
 
+async function postJson(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = await response.json()
+
+  if (!response.ok) {
+    throw new Error(data.error ?? 'The request failed.')
+  }
+
+  return data
+}
+
 export default function AskConsole() {
   const [question, setQuestion] = useState('')
   const [effort, setEffort] = useState(DEFAULT_EFFORT)
-  const [asking, setAsking] = useState(false)
-  const [result, setResult] = useState(null)
+  // idle → asking → reviewing → finalizing → done
+  const [phase, setPhase] = useState('idle')
+  const [answers, setAnswers] = useState(null)
+  const [reviews, setReviews] = useState(null)
+  const [skippedReview, setSkippedReview] = useState(null)
+  const [final, setFinal] = useState(null)
   const [error, setError] = useState(null)
   const [health, setHealth] = useState(null)
 
@@ -68,33 +87,64 @@ export default function AskConsole() {
       .catch(() => setHealth({ db: { ok: false, error: 'Health check failed.' } }))
   }, [])
 
+  /*
+   * Three rounds, driven from here rather than server-side, so each one appears
+   * as soon as it finishes instead of the whole chain landing at once:
+   *   1. every agent answers independently
+   *   2. every agent reviews the whole set
+   *   3. one agent synthesises the final answer
+   */
   async function ask(event) {
     event.preventDefault()
 
     if (question.trim() === '') return
 
-    setAsking(true)
+    setPhase('asking')
     setError(null)
-    setResult(null)
+    setAnswers(null)
+    setReviews(null)
+    setSkippedReview(null)
+    setFinal(null)
 
     try {
-      const response = await fetch('/api/ask', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, effort }),
-      })
-      const data = await response.json()
+      const round1 = await postJson('/api/ask', { question, effort })
+      setAnswers(round1.results)
 
-      if (!response.ok) {
-        setError(data.error ?? 'The request failed.')
+      const answered = round1.results.filter(
+        (agent) => agent.status === 'done' && agent.answer?.trim() !== '',
+      )
+
+      // Cross-review needs at least two answers to compare.
+      if (answered.length < 2) {
+        setSkippedReview(
+          answered.length === 0
+            ? 'No agent produced an answer, so there was nothing to review.'
+            : 'Only one agent answered, so there was nothing to cross-review.',
+        )
+        setPhase('done')
         return
       }
 
-      setResult(data)
+      setPhase('reviewing')
+      const round2 = await postJson('/api/review', {
+        question,
+        effort,
+        answers: round1.results,
+      })
+      setReviews(round2.reviews)
+
+      setPhase('finalizing')
+      const round3 = await postJson('/api/final', {
+        question,
+        effort,
+        answers: round1.results,
+        reviews: round2.reviews,
+      })
+      setFinal(round3.final)
+      setPhase('done')
     } catch (requestError) {
       setError(requestError.message)
-    } finally {
-      setAsking(false)
+      setPhase('done')
     }
   }
 
@@ -104,9 +154,14 @@ export default function AskConsole() {
   const missing = roster.filter((agent) => !agent.available)
   const unknownAgents = health?.unknown ?? []
   const problems = health?.problems ?? []
-  // Cursor and anything like it takes its reasoning tier from the model name, so
-  // the shared effort control does not reach them.
   const ignoresEffort = roster.filter((agent) => !agent.supportsEffort)
+  const busy = phase === 'asking' || phase === 'reviewing' || phase === 'finalizing'
+
+  const phaseLabel = {
+    asking: `Round 1 of 3 — ${roster.length} agent${roster.length === 1 ? '' : 's'} answering`,
+    reviewing: 'Round 2 of 3 — agents cross-reviewing each other',
+    finalizing: 'Round 3 of 3 — writing the final answer',
+  }[phase]
 
   return (
     <>
@@ -145,7 +200,7 @@ export default function AskConsole() {
           {unknownAgents.length > 0 && (
             <p className="banner">
               <strong>Unknown agent in .agents: {unknownAgents.join(', ')}.</strong> Supported
-              ids are claude and codex.
+              ids are claude, codex and cursor.
             </p>
           )}
 
@@ -158,7 +213,7 @@ export default function AskConsole() {
                 <select
                   id="effort"
                   value={effort}
-                  disabled={asking}
+                  disabled={busy}
                   onChange={(event) => changeEffort(event.target.value)}
                 >
                   {EFFORT_OPTIONS.map((option) => (
@@ -180,12 +235,9 @@ export default function AskConsole() {
               onChange={(event) => setQuestion(event.target.value)}
             />
 
-            <button
-              type="submit"
-              disabled={asking || question.trim() === '' || roster.length === 0}
-            >
-              {asking && <span className="spinner" aria-hidden="true" />}
-              {asking ? 'Asking both agents…' : 'Ask AI Agents'}
+            <button type="submit" disabled={busy || question.trim() === '' || roster.length === 0}>
+              {busy && <span className="spinner" aria-hidden="true" />}
+              {busy ? 'Working…' : 'Ask AI Agents'}
             </button>
 
             {ignoresEffort.length > 0 && (
@@ -196,37 +248,77 @@ export default function AskConsole() {
               </p>
             )}
 
-            {asking && (
-              <p className="muted">
-                {roster.length} agent{roster.length === 1 ? '' : 's'} running at once.
-              </p>
-            )}
+            {phaseLabel && <p className="muted">{phaseLabel}</p>}
           </form>
         </div>
       </aside>
 
-      {/* Right column: full-height results panel with its own scrollbar. Answers
-          stack, since the column is too narrow for two side by side. */}
+      {/* Right column: full-height results panel with its own scrollbar. */}
       <main className="content" aria-live="polite">
-        {asking ? (
-          <div className="answer-stack">
-            {roster.map((agent) => (
-              <PendingAnswer key={agent.id} id={agent.id} label={agent.label} />
-            ))}
-          </div>
-        ) : result ? (
-          <div className="answer-stack">
-            {result.results.map((agent) => (
-              <AgentAnswer key={agent.id} id={agent.id} label={agent.label} state={agent} />
-            ))}
-          </div>
-        ) : (
+        {phase === 'idle' ? (
           <div className="placeholder">
             <p>
-              Answers from <strong>Claude</strong> and <strong>Codex</strong> appear here, beside
-              your question.
+              Each agent answers on its own, then they cross-review and one writes the final
+              answer.
             </p>
           </div>
+        ) : (
+          <>
+            {/* Final answer first: it is the point of the exercise. */}
+            {(final || phase === 'finalizing') && (
+              <section>
+                <h2 className="section-title">Final answer</h2>
+                {final ? (
+                  <AgentAnswer
+                    id={final.id}
+                    label={`${final.label} · synthesis`}
+                    state={final}
+                  />
+                ) : (
+                  <PendingAnswer id="final" label="Synthesising" />
+                )}
+              </section>
+            )}
+
+            <section>
+              <h2 className="section-title">Answers{answers ? ` (${answers.length})` : ''}</h2>
+              <div className="answer-stack">
+                {answers
+                  ? answers.map((agent) => (
+                      <AgentAnswer key={agent.id} id={agent.id} label={agent.label} state={agent} />
+                    ))
+                  : roster.map((agent) => (
+                      <PendingAnswer key={agent.id} id={agent.id} label={agent.label} />
+                    ))}
+              </div>
+            </section>
+
+            {skippedReview && <p className="muted">{skippedReview}</p>}
+
+            {(reviews || phase === 'reviewing') && (
+              <section>
+                <h2 className="section-title">Cross-review</h2>
+                <div className="answer-stack">
+                  {reviews
+                    ? reviews.map((agent) => (
+                        <AgentAnswer
+                          key={agent.id}
+                          id={agent.id}
+                          label={`${agent.label} reviews`}
+                          state={agent}
+                        />
+                      ))
+                    : roster.map((agent) => (
+                        <PendingAnswer
+                          key={agent.id}
+                          id={agent.id}
+                          label={`${agent.label} reviews`}
+                        />
+                      ))}
+                </div>
+              </section>
+            )}
+          </>
         )}
       </main>
     </>

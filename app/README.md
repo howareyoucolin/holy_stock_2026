@@ -29,6 +29,28 @@ old for Next.
 The PHP site does **not** need to be running: `/learnings` reads the same rows
 the public site serves.
 
+## How a question is answered
+
+Three rounds, so the answer you keep has been challenged before you see it:
+
+1. **Answer** — every agent in the roster answers independently, concurrently.
+2. **Cross-review** — every agent gets the question and *all* the answers
+   (including its own) and critiques them: factual errors, omissions, which is
+   strongest.
+3. **Synthesis** — one agent writes the definitive answer from the candidates
+   plus the reviews, correcting whatever the reviews caught.
+
+The rounds are separate endpoints (`/api/ask`, `/api/review`, `/api/final`) driven
+from the client, so each round appears as soon as it finishes instead of the whole
+chain landing at once. The server stays stateless between rounds: the client
+passes the previous round back in.
+
+Round 2 and 3 are skipped when fewer than two agents produced an answer — there is
+nothing to cross-review — and the UI says so.
+
+Mark the synthesising agent with `final=true` in `.agents`; otherwise the first
+available agent in the file does it.
+
 ## Which agents get asked
 
 The roster lives in `.agents` at the **project root** (gitignored, alongside
@@ -36,15 +58,15 @@ The roster lives in `.agents` at the **project root** (gitignored, alongside
 sets display order and `#` comments a line out:
 
 ```
-claude
-codex
-cursor model=gemini-3.7-flash-{effort} tiers=low,medium,high
+claude final=true web=true
+codex web=true
+cursor model=gemini-3.7-flash-{effort} tiers=low,medium,high web=true
 ```
 
 | | |
 |---|---|
 | Supported ids | `claude`, `codex`, `cursor` |
-| Supported keys | `model`, `tiers` |
+| Supported keys | `model`, `tiers`, `final`, `web` |
 
 Unknown ids and bad options are reported in the UI rather than silently ignored,
 and a `model` value is pattern-checked before it reaches argv. The file is read on
@@ -52,6 +74,24 @@ every request, so edits take effect without restarting. A missing file means "us
 every supported agent".
 
 Copy `.agents.example` to get started.
+
+### Web access
+
+Every CLI blocks the network in print/non-interactive mode, so an agent asked
+about current prices or recent events will say it cannot look anything up. Web
+access is therefore **on by default**, granted with the narrowest switch each CLI
+offers:
+
+| Agent | Switch | What it grants |
+|---|---|---|
+| `claude` | `--allowedTools WebSearch WebFetch` | only those two tools — not Bash or file writes |
+| `codex` | `-c tools.web_search=true` | the native web_search tool; `--search` is interactive-only and is rejected by `exec` |
+| `cursor` | `--auto-review` | auto-approves safe tool calls; stays in read-only `--mode ask` |
+
+Deliberately *not* used: `--dangerously-skip-permissions` (claude) or `--force` /
+`--yolo` (cursor), which would also grant shell and write access.
+
+Set `web=false` on a line to keep that agent offline.
 
 ### Effort, per agent
 
@@ -88,11 +128,13 @@ in `AgentIcon.jsx`, and its allowed option keys.
 ```
 src/app/page.jsx              ask screen
 src/app/learnings/            list and detail, reading the database directly
-src/app/api/ask/route.js      runs both CLIs concurrently
+src/app/api/ask/route.js      round 1 — every agent answers, concurrently
+src/app/api/review/route.js   round 2 — every agent reviews the whole set
+src/app/api/final/route.js    round 3 — one agent writes the synthesis
 src/app/api/learnings/route.js  list + insert
-src/app/api/health/route.js   database reachability + whether each CLI was found
+src/app/api/health/route.js   db reachability, agent roster, CLI availability
 src/components/               AskConsole, AgentAnswer, PendingAnswer, AgentIcon, SidebarHead
-src/lib/agents.js             spawns the claude / codex CLIs
+src/lib/agents.js             adapters, roster parsing, the three rounds
 src/lib/db.js                 mysql2 pool, credentials from the project-root .env
 ```
 

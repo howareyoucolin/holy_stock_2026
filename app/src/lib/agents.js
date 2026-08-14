@@ -35,11 +35,14 @@ const ADAPTERS = {
     label: 'Claude',
     bin: 'claude',
     supportsEffort: true,
-    args: ({ effort, model }) => [
+    // An allowlist of exactly two tools — narrower than any of the
+    // skip-permission flags, which would also grant Bash and file writes.
+    args: ({ effort, model, web }) => [
       '-p',
       '--effort',
       effort,
       ...(model ? ['--model', model] : []),
+      ...(web ? ['--allowedTools', 'WebSearch', 'WebFetch'] : []),
     ],
   },
   codex: {
@@ -50,10 +53,13 @@ const ADAPTERS = {
     // Codex prints an event stream on stdout, so the final message is captured
     // from a file instead. read-only sandboxing keeps a question from editing
     // anything.
-    args: ({ effort, model, outFile }) => [
+    // `--search` is interactive-only; under `exec` the same switch is a config
+    // override.
+    args: ({ effort, model, web, outFile }) => [
       'exec',
       '-c',
       `model_reasoning_effort=${CODEX_EFFORT[effort]}`,
+      ...(web ? ['-c', 'tools.web_search=true'] : []),
       ...(model ? ['--model', model] : []),
       '--sandbox',
       'read-only',
@@ -75,14 +81,17 @@ const ADAPTERS = {
     // drive it. Set `model=` in .agents to pick a tier.
     supportsEffort: false,
     // `--mode ask` is the read-only Q&A mode; plain `--print` would otherwise
-    // have write and shell tools available.
-    args: ({ model }) => [
+    // have write and shell tools available. Ask mode alone also blocks the
+    // network, so `--auto-review` is added to auto-approve safe tool calls
+    // (web search) — still without leaving read-only mode.
+    args: ({ model, web }) => [
       '-p',
       '--mode',
       'ask',
       '--output-format',
       'text',
       ...(model ? ['--model', model] : []),
+      ...(web ? ['--auto-review'] : []),
     ],
   },
 }
@@ -90,9 +99,20 @@ const ADAPTERS = {
 // Options a .agents line may set, per agent. Anything else is rejected rather
 // than passed through, so the file cannot inject arbitrary flags into argv.
 const ALLOWED_OPTIONS = {
-  claude: ['model', 'tiers'],
-  codex: ['model', 'tiers'],
-  cursor: ['model', 'tiers'],
+  claude: ['model', 'tiers', 'final', 'web'],
+  codex: ['model', 'tiers', 'final', 'web'],
+  cursor: ['model', 'tiers', 'final', 'web'],
+}
+
+const TRUTHY = ['true', '1', 'yes', 'on']
+const FALSY = ['false', '0', 'no', 'off']
+
+// Web access is on unless a line says otherwise: this console is for research
+// questions, and every CLI refuses network access by default in print mode.
+function wantsWeb(options) {
+  const value = String(options?.web ?? '').toLowerCase()
+
+  return !FALSY.includes(value)
 }
 
 // Model names include dots, dashes, Cursor's bracket overrides
@@ -221,6 +241,20 @@ export function loadAgents() {
         continue
       }
 
+      if (key === 'final' && value !== '' && !TRUTHY.includes(value.toLowerCase())) {
+        problems.push(`${id}: final must be true (got "${value}")`)
+        continue
+      }
+
+      if (
+        key === 'web' &&
+        value !== '' &&
+        ![...TRUTHY, ...FALSY].includes(value.toLowerCase())
+      ) {
+        problems.push(`${id}: web must be true or false (got "${value}")`)
+        continue
+      }
+
       if (key === 'tiers') {
         const bad = value
           .split(',')
@@ -256,6 +290,9 @@ function descriptor(adapter, options = {}) {
     binEnv: binEnvName(adapter.bin),
     supportsEffort: agentUsesEffort(adapter, options),
     model: options.model ?? null,
+    // `final=true` in .agents nominates the agent that writes the synthesis.
+    isFinalizer: TRUTHY.includes(String(options.final ?? '').toLowerCase()),
+    web: wantsWeb(options),
     options,
   }
 }
@@ -400,7 +437,7 @@ async function askOne(adapter, question, effort, options = {}) {
 
   const result = await runCli({
     bin,
-    args: adapter.args({ effort, model: model || undefined, outFile }),
+    args: adapter.args({ effort, model: model || undefined, web: wantsWeb(options), outFile }),
     question,
     readOutputFile: outFile,
   })
@@ -426,4 +463,118 @@ export async function askAgents(question, effort = DEFAULT_EFFORT) {
   )
 
   return { effort: level, results }
+}
+
+
+/* ---------- cross-review ---------- */
+
+// Only answers that actually returned text are worth reviewing or synthesising.
+function usable(entries) {
+  return (entries ?? []).filter(
+    (entry) => entry?.status === 'done' && String(entry.answer ?? '').trim() !== '',
+  )
+}
+
+function transcript(entries) {
+  return usable(entries)
+    .map((entry) => `--- ${entry.label} ---\n${String(entry.answer).trim()}`)
+    .join('\n\n')
+}
+
+function reviewPrompt(label, question, answers) {
+  return [
+    `You are ${label}, one of several AI agents that independently answered the same question.`,
+    '',
+    'QUESTION',
+    question,
+    '',
+    'CANDIDATE ANSWERS',
+    transcript(answers),
+    '',
+    'Review every answer above, including your own. Be specific and brief:',
+    '- point out factual errors or unsupported claims, naming the answer',
+    '- point out anything important that is missing',
+    '- say which answer is strongest overall, and why',
+    'Do not write a replacement answer.',
+  ].join('\n')
+}
+
+function finalPrompt(question, answers, reviews) {
+  return [
+    'Several AI agents answered the question below independently, then reviewed each',
+    "other's answers. Produce the single definitive answer.",
+    '',
+    'QUESTION',
+    question,
+    '',
+    'CANDIDATE ANSWERS',
+    transcript(answers),
+    '',
+    'PEER REVIEWS',
+    transcript(reviews),
+    '',
+    'Correct whatever the reviews showed to be wrong, keep what they agreed on, and',
+    'resolve any disagreement on the merits. Output only the final answer — no',
+    'preamble and no mention of this review process.',
+  ].join('\n')
+}
+
+// Round 2: every agent critiques the whole set, concurrently.
+export async function reviewAnswers(question, effort, answers) {
+  const level = normalizeEffort(effort)
+  const { agents } = loadAgents()
+  const pool = usable(answers)
+
+  // Nothing to cross-review with fewer than two answers.
+  if (pool.length < 2) {
+    return { effort: level, reviews: [], skipped: 'fewer than two answers to compare' }
+  }
+
+  const reviews = await Promise.all(
+    agents.map(async (agent) => ({
+      id: agent.id,
+      label: agent.label,
+      effortApplied: agent.supportsEffort,
+      ...(await askOne(
+        ADAPTERS[agent.id],
+        reviewPrompt(agent.label, question, pool),
+        level,
+        agent.options,
+      )),
+    })),
+  )
+
+  return { effort: level, reviews }
+}
+
+// Whoever is marked `final=true`, else the first available agent in file order.
+export function pickFinalizer(agents) {
+  return (
+    agents.find((agent) => agent.isFinalizer && agent.available) ??
+    agents.find((agent) => agent.available) ??
+    null
+  )
+}
+
+// Round 3: one agent writes the synthesis from the answers plus the reviews.
+export async function finalizeAnswer(question, effort, answers, reviews) {
+  const level = normalizeEffort(effort)
+  const { agents } = loadAgents()
+  const finalizer = pickFinalizer(agents)
+
+  if (!finalizer) {
+    return { effort: level, final: null, error: 'No available agent to write the final answer.' }
+  }
+
+  const result = await askOne(
+    ADAPTERS[finalizer.id],
+    finalPrompt(question, answers, reviews),
+    level,
+    finalizer.options,
+  )
+
+  return {
+    effort: level,
+    final: { id: finalizer.id, label: finalizer.label, ...result },
+  }
 }
