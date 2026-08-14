@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { askAgents, DEFAULT_EFFORT, EFFORT_LEVELS } from '@/lib/agents'
+import { askAgents, DEFAULT_EFFORT, EFFORT_LEVELS, loadAgents } from '@/lib/agents'
 
 // child_process needs the Node runtime, not the edge one.
 export const runtime = 'nodejs'
@@ -34,6 +34,19 @@ export async function POST(request) {
   if (!EFFORT_LEVELS.includes(requested)) {
     return NextResponse.json(
       { error: `Effort must be one of: ${EFFORT_LEVELS.join(', ')}.` },
+      { status: 400 },
+    )
+  }
+
+  // An empty roster means every line in .agents was blank, commented out, or an
+  // unrecognised id — worth saying plainly instead of returning zero answers.
+  const { agents, unknown } = loadAgents()
+
+  if (agents.length === 0) {
+    const detail = unknown.length > 0 ? ` Unrecognised: ${unknown.join(', ')}.` : ''
+
+    return NextResponse.json(
+      { error: `No agents are enabled. Add one to the .agents file.${detail}` },
       { status: 400 },
     )
   }

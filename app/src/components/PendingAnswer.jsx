@@ -2,11 +2,11 @@ import AgentIcon from './AgentIcon'
 
 // Occupies an agent's slot while it is still running, so the results column is
 // not blank for the minute or two a question takes.
-export default function PendingAnswer({ label }) {
+export default function PendingAnswer({ id, label }) {
   return (
     <article className="answer-card">
       <div className="answer-head">
-        <AgentIcon agent={label.toLowerCase()} />
+        <AgentIcon agent={id} />
         <h3>{label}</h3>
         <span className="pill pill-run">running</span>
       </div>

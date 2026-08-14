@@ -548,6 +548,14 @@ select:disabled {
   min-width: 0;
 }
 
+.model-tag {
+  margin-left: 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .pill-run {
   color: var(--text-muted);
   background: var(--well);
@@ -640,6 +648,10 @@ select:disabled {
 
 .avatar[data-agent='codex'] {
   color: #d09ac6;
+}
+
+.avatar[data-agent='cursor'] {
+  color: #6ed3da;
 }
 
 .pill {

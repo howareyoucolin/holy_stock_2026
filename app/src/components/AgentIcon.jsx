@@ -13,6 +13,19 @@ const ICONS = {
       />
     </svg>
   ),
+  // Pointer, echoing Cursor's name.
+  cursor: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M5.8 3.4 19.2 11.4l-6.4 1.2-2.2 6.1z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  ),
   // Shell prompt, since codex is driven as a CLI.
   codex: (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -28,10 +41,18 @@ const ICONS = {
   ),
 }
 
+// Any agent id without its own glyph falls back to a neutral dot, so a new entry
+// in .agents renders sensibly before an icon is drawn for it.
+const FALLBACK = (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" strokeWidth="2.3" />
+  </svg>
+)
+
 export default function AgentIcon({ agent }) {
   return (
     <span className="avatar" data-agent={agent} aria-hidden="true">
-      {ICONS[agent] ?? null}
+      {ICONS[agent] ?? FALLBACK}
     </span>
   )
 }

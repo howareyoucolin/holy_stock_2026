@@ -1,0 +1,24 @@
+# Which AI agents this console asks.
+#
+#   <id> [key=value ...]
+#
+# One agent per line; file order sets display order. Blank lines and anything
+# after a # are ignored. Comment a line out to stop asking that agent.
+#
+# Supported ids : claude, codex, cursor
+# Supported keys: model, tiers
+#
+# Effort: the Effort selector drives `claude --effort` and codex's
+# model_reasoning_effort directly. Cursor has no effort flag — its tier is part
+# of the model name — so write {effort} in the model and the selected level is
+# substituted. `tiers=` lists the levels that family actually has; anything
+# higher clamps down to the top of that list.
+#
+# Cursor model names: `cursor-agent models`.
+#
+# Read fresh on every request, so edits take effect without restarting the dev
+# server. If this file is missing, every supported agent is used.
+
+claude
+codex
+cursor model=gemini-3.7-flash-{effort} tiers=low,medium,high

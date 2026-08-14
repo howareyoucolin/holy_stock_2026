@@ -5,8 +5,6 @@ import AgentAnswer from './AgentAnswer'
 import PendingAnswer from './PendingAnswer'
 import SidebarHead from './SidebarHead'
 
-const AGENTS = ['Claude', 'Codex']
-
 const EFFORT_STORAGE_KEY = 'holystocks:effort'
 const DEFAULT_EFFORT = 'medium'
 
@@ -100,9 +98,15 @@ export default function AskConsole() {
     }
   }
 
-  const missingAgents = health?.agents
-    ? [!health.agents.claude && 'claude', !health.agents.codex && 'codex'].filter(Boolean)
-    : []
+  // Roster comes from the .agents file via /api/health, so the pending cards
+  // match whatever is actually going to be asked.
+  const roster = health?.agents ?? []
+  const missing = roster.filter((agent) => !agent.available)
+  const unknownAgents = health?.unknown ?? []
+  const problems = health?.problems ?? []
+  // Cursor and anything like it takes its reasoning tier from the model name, so
+  // the shared effort control does not reach them.
+  const ignoresEffort = roster.filter((agent) => !agent.supportsEffort)
 
   return (
     <>
@@ -118,10 +122,30 @@ export default function AskConsole() {
             </p>
           )}
 
-          {missingAgents.length > 0 && (
+          {missing.length > 0 && (
             <p className="banner">
-              <strong>Missing CLI: {missingAgents.join(', ')}.</strong> Set CLAUDE_BIN /
-              CODEX_BIN to the full path.
+              <strong>Missing CLI: {missing.map((agent) => agent.id).join(', ')}.</strong> Set{' '}
+              {missing.map((agent) => agent.binEnv).join(' / ')} to the full path.
+            </p>
+          )}
+
+          {problems.length > 0 && (
+            <p className="banner">
+              <strong>Problem in .agents:</strong> {problems.join('; ')}.
+            </p>
+          )}
+
+          {health && roster.length === 0 && (
+            <p className="banner">
+              <strong>No agents enabled.</strong> Add an agent id to the <code>.agents</code>{' '}
+              file.
+            </p>
+          )}
+
+          {unknownAgents.length > 0 && (
+            <p className="banner">
+              <strong>Unknown agent in .agents: {unknownAgents.join(', ')}.</strong> Supported
+              ids are claude and codex.
             </p>
           )}
 
@@ -156,12 +180,27 @@ export default function AskConsole() {
               onChange={(event) => setQuestion(event.target.value)}
             />
 
-            <button type="submit" disabled={asking || question.trim() === ''}>
+            <button
+              type="submit"
+              disabled={asking || question.trim() === '' || roster.length === 0}
+            >
               {asking && <span className="spinner" aria-hidden="true" />}
               {asking ? 'Asking both agents…' : 'Ask AI Agents'}
             </button>
 
-            {asking && <p className="muted">Both agents run at once, at {effort} effort.</p>}
+            {ignoresEffort.length > 0 && (
+              <p className="muted">
+                {ignoresEffort.map((agent) => agent.label).join(', ')} ignore
+                {ignoresEffort.length === 1 ? 's' : ''} this — set a model in{' '}
+                <code>.agents</code> instead.
+              </p>
+            )}
+
+            {asking && (
+              <p className="muted">
+                {roster.length} agent{roster.length === 1 ? '' : 's'} running at once.
+              </p>
+            )}
           </form>
         </div>
       </aside>
@@ -171,14 +210,15 @@ export default function AskConsole() {
       <main className="content" aria-live="polite">
         {asking ? (
           <div className="answer-stack">
-            {AGENTS.map((label) => (
-              <PendingAnswer key={label} label={label} />
+            {roster.map((agent) => (
+              <PendingAnswer key={agent.id} id={agent.id} label={agent.label} />
             ))}
           </div>
         ) : result ? (
           <div className="answer-stack">
-            <AgentAnswer label="Claude" state={result.claude} />
-            <AgentAnswer label="Codex" state={result.codex} />
+            {result.results.map((agent) => (
+              <AgentAnswer key={agent.id} id={agent.id} label={agent.label} state={agent} />
+            ))}
           </div>
         ) : (
           <div className="placeholder">

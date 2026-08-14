@@ -1,13 +1,16 @@
 import AgentIcon from './AgentIcon'
 
-export default function AgentAnswer({ label, state }) {
+export default function AgentAnswer({ id, label, state }) {
   const failed = state?.status === 'error'
 
   return (
     <article className="answer-card">
       <div className="answer-head">
-        <AgentIcon agent={label.toLowerCase()} />
-        <h3>{label}</h3>
+        <AgentIcon agent={id} />
+        <h3>
+          {label}
+          {state?.modelUsed && <span className="model-tag">{state.modelUsed}</span>}
+        </h3>
         <span className={failed ? 'pill pill-fail' : 'pill pill-ok'}>
           {failed ? 'failed' : 'done'}
         </span>
