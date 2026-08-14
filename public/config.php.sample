@@ -1,0 +1,18 @@
+<?php
+
+declare(strict_types=1);
+
+// Only used when DB_* environment variables are not set (i.e. deploys outside
+// Docker, such as shared hosting). Copy to config.php and fill in. config.php is
+// gitignored.
+
+return [
+    'db' => [
+        'host' => 'your-remote-mysql-host.example.com',
+        'port' => '3306',
+        'database' => 'holy_stocks',
+        'username' => 'your_db_username',
+        'password' => 'your_db_password',
+        'charset' => 'utf8mb4',
+    ],
+];

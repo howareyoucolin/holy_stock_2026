@@ -1,0 +1,16 @@
+services:
+  php:
+    build:
+      context: .
+    container_name: holy_stocks_php
+    restart: unless-stopped
+    ports:
+      - "8900:80"
+    env_file:
+      - .env
+    volumes:
+      - ./:/var/www/html
+    # Lets the container reach a MySQL running on the Mac itself via
+    # DB_HOST=host.docker.internal. Harmless when the DB is truly remote.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
