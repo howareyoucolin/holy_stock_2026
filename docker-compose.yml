@@ -5,7 +5,7 @@ services:
     container_name: holy_stocks_php
     restart: unless-stopped
     ports:
-      - "8300:80"
+      - "8301:80"
     env_file:
       - .env
     volumes:

@@ -1,0 +1,18 @@
+{
+  "name": "holystocks-app",
+  "private": true,
+  "description": "Local-only Next.js console for asking AI agents questions and publishing takeaways to the remote MySQL.",
+  "scripts": {
+    "dev": "next dev -p 8300",
+    "build": "next build",
+    "start": "next start -p 8300",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mysql2": "^3.11.3",
+    "next": "^16.3.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

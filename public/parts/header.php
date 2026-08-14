@@ -36,6 +36,10 @@ $pageTitle = $pageTitle ?? 'holyStocks';
                  border: 1px solid rgba(128,128,128,.3); border-radius: 6px;
                  background: rgba(128,128,128,.08); font: inherit; }
     hr { border: 0; border-top: 1px solid rgba(128,128,128,.35); margin: 2rem 0; }
+    article { padding: 1rem 0; border-bottom: 1px solid rgba(128,128,128,.25); }
+    article h3 { margin: 0 0 .2rem; }
+    article p { margin: .2rem 0; }
+    .pager { display: flex; gap: 1rem; align-items: center; margin-top: 1.5rem; }
 </style>
 </head>
 <body>

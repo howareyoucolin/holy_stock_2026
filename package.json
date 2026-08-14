@@ -1,0 +1,13 @@
+{
+  "name": "holystocks",
+  "private": true,
+  "description": "Public PHP site plus a local-only React console for asking AI agents and publishing takeaways.",
+  "scripts": {
+    "dev": "bash bin/dev.sh",
+    "dev:stop": "bash bin/dev-stop.sh",
+    "setup": "bash bin/dev.sh --install-only",
+    "tunnel": "bash bin/db-tunnel.sh",
+    "tunnel:docker": "bash bin/db-tunnel.sh --docker",
+    "tunnel:stop": "bash bin/db-tunnel.sh --stop"
+  }
+}
