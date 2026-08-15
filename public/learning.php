@@ -11,7 +11,7 @@ require_once __DIR__ . '/bootstrap.php';
 
 http_response_code(404);
 
-$pageTitle = 'holyStocks';
+$pageTitle = 'HolyStocks';
 
 require __DIR__ . '/parts/header.php';
 ?>
@@ -19,7 +19,7 @@ require __DIR__ . '/parts/header.php';
 <h2>TO BE BUILT&hellip;</h2>
 
 <p class="muted">
-    This page has been retired. The public side of holyStocks is being rebuilt.
+    This page has been retired. The public side of HolyStocks is being rebuilt.
 </p>
 
 <p><a href="index.php">&larr; Home</a></p>
