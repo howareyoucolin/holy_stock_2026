@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
+import { buildFinalPrompt, buildReviewPrompt, buildTaskPrompt } from './prompts.js'
 
 const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 300_000)
 
@@ -448,9 +449,10 @@ async function askOne(adapter, question, effort, options = {}) {
 
 // Ask every agent listed in .agents at once; the request takes as long as the
 // slowest one.
-export async function askAgents(question, effort = DEFAULT_EFFORT) {
+export async function askAgents(task, effort = DEFAULT_EFFORT) {
   const level = normalizeEffort(effort)
   const { agents } = loadAgents()
+  const prompt = buildTaskPrompt(task)
 
   const results = await Promise.all(
     agents.map(async (agent) => ({
@@ -458,7 +460,7 @@ export async function askAgents(question, effort = DEFAULT_EFFORT) {
       label: agent.label,
       // Reported so the UI can say when an agent ignored the chosen effort.
       effortApplied: agent.supportsEffort,
-      ...(await askOne(ADAPTERS[agent.id], question, level, agent.options)),
+      ...(await askOne(ADAPTERS[agent.id], prompt, level, agent.options)),
     })),
   )
 
@@ -475,77 +477,8 @@ function usable(entries) {
   )
 }
 
-function transcript(entries) {
-  return usable(entries)
-    .map((entry) => `--- ${entry.label} ---\n${String(entry.answer).trim()}`)
-    .join('\n\n')
-}
-
-function reviewPrompt(label, question, answers) {
-  return [
-    `You are ${label}, one of several AI agents that independently answered the same question.`,
-    '',
-    'QUESTION',
-    question,
-    '',
-    'CANDIDATE ANSWERS',
-    transcript(answers),
-    '',
-    'Review every answer above, including your own. Be specific and brief:',
-    '- point out factual errors or unsupported claims, naming the answer',
-    '- point out anything important that is missing',
-    '- say which answer is strongest overall, and why',
-    'Do not write a replacement answer.',
-  ].join('\n')
-}
-
-/*
- * The synthesis is meant to be scanned, not read start to finish, so it asks for
- * a fixed shape: a one-breath TL;DR, then short bullets. FinalAnswer.jsx parses
- * these headings — and falls back to rendering the raw text if a model ignores
- * the format.
- */
-function finalPrompt(question, answers, reviews) {
-  return [
-    'Several AI agents answered the question below independently, then reviewed each',
-    "other's answers. Write the single definitive answer, for a reader who wants to",
-    'scan it in a few seconds.',
-    '',
-    'QUESTION',
-    question,
-    '',
-    'CANDIDATE ANSWERS',
-    transcript(answers),
-    '',
-    'PEER REVIEWS',
-    transcript(reviews),
-    '',
-    'Correct whatever the reviews showed to be wrong, keep what they agreed on, and',
-    'resolve any disagreement on the merits.',
-    '',
-    'Write it the way you would explain it to a friend, out loud:',
-    '- plain everyday words, short sentences, contractions are fine',
-    '- no jargon unless it is unavoidable, and then say what it means in a few words',
-    '- no hedging, no corporate or academic phrasing, no throat-clearing',
-    '- say "you" and give the recommendation straight',
-    '',
-    'Use exactly this format, with no preamble and no mention of this process:',
-    '',
-    'TL;DR: <the answer in one or two plain sentences, under 40 words>',
-    '',
-    'KEY POINTS',
-    '- <one line each, most important first, under 20 words>',
-    '- <three to six of them>',
-    '',
-    'CAVEATS',
-    '- <only real gotchas, or things the agents disagreed about>',
-    '',
-    'Omit the CAVEATS section entirely if there are none. Do not add other sections.',
-  ].join('\n')
-}
-
 // Round 2: every agent critiques the whole set, concurrently.
-export async function reviewAnswers(question, effort, answers) {
+export async function reviewAnswers(task, effort, answers) {
   const level = normalizeEffort(effort)
   const { agents } = loadAgents()
   const pool = usable(answers)
@@ -562,7 +495,7 @@ export async function reviewAnswers(question, effort, answers) {
       effortApplied: agent.supportsEffort,
       ...(await askOne(
         ADAPTERS[agent.id],
-        reviewPrompt(agent.label, question, pool),
+        buildReviewPrompt(task, agent.label, pool),
         level,
         agent.options,
       )),
@@ -582,7 +515,7 @@ export function pickFinalizer(agents) {
 }
 
 // Round 3: one agent writes the synthesis from the answers plus the reviews.
-export async function finalizeAnswer(question, effort, answers, reviews) {
+export async function finalizeAnswer(task, effort, answers, reviews) {
   const level = normalizeEffort(effort)
   const { agents } = loadAgents()
   const finalizer = pickFinalizer(agents)
@@ -593,7 +526,7 @@ export async function finalizeAnswer(question, effort, answers, reviews) {
 
   const result = await askOne(
     ADAPTERS[finalizer.id],
-    finalPrompt(question, answers, reviews),
+    buildFinalPrompt(task, answers, reviews),
     level,
     finalizer.options,
   )

@@ -6,7 +6,13 @@ import FinalAnswer from './FinalAnswer'
 import PendingAnswer from './PendingAnswer'
 import SidebarHead from './SidebarHead'
 
+const TYPE_STORAGE_KEY = 'holystocks:type'
 const EFFORT_STORAGE_KEY = 'holystocks:effort'
+
+const TYPES = [
+  { value: 'general', label: 'General' },
+  { value: 'valuation', label: 'Stock valuation' },
+]
 const DEFAULT_EFFORT = 'medium'
 
 // Mirrors EFFORT_LEVELS in src/lib/agents.js, which the API also validates
@@ -49,7 +55,9 @@ async function postJson(url, body) {
 }
 
 export default function AskConsole() {
+  const [type, setType] = useState('general')
   const [question, setQuestion] = useState('')
+  const [ticker, setTicker] = useState('')
   const [effort, setEffort] = useState(DEFAULT_EFFORT)
   // idle → asking → reviewing → finalizing → done
   const [phase, setPhase] = useState('idle')
@@ -69,7 +77,29 @@ export default function AskConsole() {
     if (saved) {
       setEffort(saved)
     }
+
+    try {
+      const savedType = window.localStorage.getItem(TYPE_STORAGE_KEY)
+      if (TYPES.some((option) => option.value === savedType)) {
+        setType(savedType)
+      }
+    } catch {
+      // Storage unavailable; the default type still applies.
+    }
   }, [])
+
+  function changeType(value) {
+    // Clicking the tab that is already open is a no-op, not a re-select.
+    if (value === type) return
+
+    setType(value)
+
+    try {
+      window.localStorage.setItem(TYPE_STORAGE_KEY, value)
+    } catch {
+      // Storage unavailable — the choice still applies for this session.
+    }
+  }
 
   function changeEffort(value) {
     setEffort(value)
@@ -98,7 +128,12 @@ export default function AskConsole() {
   async function ask(event) {
     event.preventDefault()
 
-    if (question.trim() === '') return
+    if (!ready) return
+
+    const task =
+      type === 'valuation'
+        ? { type, ticker: ticker.trim().toUpperCase() }
+        : { type, question: question.trim() }
 
     setPhase('asking')
     setError(null)
@@ -108,7 +143,7 @@ export default function AskConsole() {
     setFinal(null)
 
     try {
-      const round1 = await postJson('/api/ask', { question, effort })
+      const round1 = await postJson('/api/ask', { ...task, effort })
       setAnswers(round1.results)
 
       const answered = round1.results.filter(
@@ -128,7 +163,7 @@ export default function AskConsole() {
 
       setPhase('reviewing')
       const round2 = await postJson('/api/review', {
-        question,
+        task,
         effort,
         answers: round1.results,
       })
@@ -136,7 +171,7 @@ export default function AskConsole() {
 
       setPhase('finalizing')
       const round3 = await postJson('/api/final', {
-        question,
+        task,
         effort,
         answers: round1.results,
         reviews: round2.reviews,
@@ -157,6 +192,8 @@ export default function AskConsole() {
   const problems = health?.problems ?? []
   const ignoresEffort = roster.filter((agent) => !agent.supportsEffort)
   const busy = phase === 'asking' || phase === 'reviewing' || phase === 'finalizing'
+  const isValuation = type === 'valuation'
+  const ready = isValuation ? ticker.trim() !== '' : question.trim() !== ''
 
   const phaseLabel = {
     asking: `Round 1 of 3 — ${roster.length} agent${roster.length === 1 ? '' : 's'} answering`,
@@ -208,6 +245,22 @@ export default function AskConsole() {
           {error && <p className="banner">{error}</p>}
 
           <form onSubmit={ask} className="card-flat">
+            <div className="type-tabs" role="tablist" aria-label="Question type">
+              {TYPES.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="tab"
+                  className="type-tab"
+                  aria-selected={type === option.value}
+                  disabled={busy}
+                  onClick={() => changeType(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
             <div className="card-head">
               <div className="field-inline">
                 <label htmlFor="effort">Effort</label>
@@ -226,19 +279,41 @@ export default function AskConsole() {
               </div>
             </div>
 
-            <label htmlFor="question">Your question</label>
-            <textarea
-              id="question"
-              rows={8}
-              value={question}
-              maxLength={4000}
-              placeholder="e.g. When should a PHP class use a trait instead of inheritance?"
-              onChange={(event) => setQuestion(event.target.value)}
-            />
+            {isValuation ? (
+              <>
+                <label htmlFor="ticker">Ticker</label>
+                <input
+                  id="ticker"
+                  type="text"
+                  value={ticker}
+                  maxLength={15}
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  placeholder="e.g. AAPL"
+                  onChange={(event) => setTicker(event.target.value.toUpperCase())}
+                />
+                <p className="muted">
+                  Each agent looks up today&rsquo;s price and fundamentals, then argues a
+                  buy/hold/sell with targets and risks.
+                </p>
+              </>
+            ) : (
+              <>
+                <label htmlFor="question">Your question</label>
+                <textarea
+                  id="question"
+                  rows={8}
+                  value={question}
+                  maxLength={4000}
+                  placeholder="e.g. When should a PHP class use a trait instead of inheritance?"
+                  onChange={(event) => setQuestion(event.target.value)}
+                />
+              </>
+            )}
 
-            <button type="submit" disabled={busy || question.trim() === '' || roster.length === 0}>
+            <button type="submit" disabled={busy || !ready || roster.length === 0}>
               {busy && <span className="spinner" aria-hidden="true" />}
-              {busy ? 'Working…' : 'Ask AI Agents'}
+              {busy ? 'Working…' : isValuation ? 'Analyze Stock' : 'Ask AI Agents'}
             </button>
 
             {ignoresEffort.length > 0 && (
@@ -293,6 +368,13 @@ export default function AskConsole() {
                     ))}
               </div>
             </section>
+
+            {isValuation && (
+              <p className="muted disclaimer">
+                Agent analysis, not financial advice. Prices and figures are whatever the
+                agents found on the web just now — check them before acting.
+              </p>
+            )}
 
             {skippedReview && <p className="muted">{skippedReview}</p>}
 

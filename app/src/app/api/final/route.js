@@ -15,12 +15,12 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 })
   }
 
-  const question = String(body?.question ?? '').trim()
+  const task = body?.task ?? { type: 'general', question: String(body?.question ?? '') }
   const answers = Array.isArray(body?.answers) ? body.answers : []
   const reviews = Array.isArray(body?.reviews) ? body.reviews : []
 
-  if (question === '') {
-    return NextResponse.json({ error: 'A question is required.' }, { status: 400 })
+  if (!task || (String(task.question ?? '').trim() === '' && String(task.ticker ?? '').trim() === '')) {
+    return NextResponse.json({ error: 'A task is required.' }, { status: 400 })
   }
 
   if (answers.length === 0) {
@@ -37,7 +37,7 @@ export async function POST(request) {
   }
 
   try {
-    return NextResponse.json(await finalizeAnswer(question, effort, answers, reviews))
+    return NextResponse.json(await finalizeAnswer(task, effort, answers, reviews))
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }

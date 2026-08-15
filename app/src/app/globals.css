@@ -204,35 +204,44 @@ body::before {
   text-transform: uppercase;
 }
 
-/* Segmented control: a dark well cut into the plum bar, holding one lit pill. */
+/* Plain tabs: no track, no pill — just labels, with the active one underlined. */
 .tabs {
   display: flex;
-  gap: 0.2rem;
-  padding: 0.2rem;
-  border-radius: 11px;
-  background: rgba(0, 0, 0, 0.3);
-  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
+  gap: 1.25rem;
 }
 
 .tab {
-  padding: 0.32rem 0.85rem;
-  border-radius: 8px;
+  position: relative;
+  padding: 0.3rem 0.1rem 0.45rem;
   font-size: 0.87rem;
   font-weight: 550;
-  color: rgba(255, 255, 255, 0.66);
+  color: rgba(255, 255, 255, 0.6);
   text-decoration: none;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: color 0.15s ease;
 }
 
 .tab:hover {
   color: #fff;
 }
 
-/* Active tab picks up the editor's selection magenta. */
+.tab::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
 .tab[aria-current='page'] {
   color: #fff;
-  background: linear-gradient(180deg, var(--accent-2), var(--accent));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), var(--shadow-sm);
+}
+
+.tab[aria-current='page']::after {
+  background: var(--accent-2);
 }
 
 .sidebar-body {
@@ -603,6 +612,124 @@ select:disabled {
 
 .caveats li::marker {
   color: var(--warn);
+}
+
+/*
+ * Question-type tabs: folder tabs, sized to their labels and left-aligned above
+ * a rule that runs the full width. Inactive tabs are recessed and sit on that
+ * rule; the active one loses its fill and paints over the rule in the sidebar's
+ * own colour, so it opens straight into the form below.
+ */
+.type-tabs {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 1.2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/*
+ * Scoped through .type-tabs throughout: these buttons sit inside a .card-flat
+ * form, and the plain `.type-tab` selector loses to `.card-flat button`, which
+ * would paint them as accent-filled buttons.
+ */
+.type-tabs .type-tab {
+  position: relative;
+  /* Pulls the tab down so its own bottom edge lands on the container's rule. */
+  margin: 0 0 -1px;
+  padding: 0.45rem 1.05rem 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--well);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  box-shadow: none;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+/* Neighbours share one hairline instead of stacking two. */
+.type-tabs .type-tab + .type-tab {
+  border-left: 0;
+}
+
+.type-tabs .type-tab:hover:not(:disabled):not([aria-selected='true']) {
+  color: var(--text);
+  background: var(--surface-2);
+  filter: none;
+  box-shadow: none;
+}
+
+.type-tabs .type-tab:active:not(:disabled) {
+  transform: none;
+  filter: none;
+  background: var(--surface-2);
+}
+
+/*
+ * No fill, and a bottom edge painted in the sidebar's background so it erases
+ * the rule underneath rather than continuing it — the tab reads as open into
+ * the form below. Keeping the border (rather than removing it) holds the row
+ * at one height.
+ */
+.type-tabs .type-tab[aria-selected='true'] {
+  color: var(--text);
+  font-weight: 680;
+  background: none;
+  border-bottom-color: var(--bg-2);
+  box-shadow: none;
+  /* Nothing happens when you click the tab you are already on. */
+  cursor: default;
+}
+
+/*
+ * The open tab is inert: no hover fill, no press feedback. Written out rather
+ * than left to the base rule because `.card-flat button:hover` / `:active`
+ * outrank it and would flood the tab with the accent fill.
+ */
+.type-tabs .type-tab[aria-selected='true']:hover,
+.type-tabs .type-tab[aria-selected='true']:active {
+  background: none;
+  filter: none;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Brand cue on the lit edge, in place of the underline the active tab lost. */
+.type-tabs .type-tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -1px;
+  right: -1px;
+  height: 2px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--accent);
+}
+
+/*
+ * Dimmed by colour, not opacity: fading the whole element would also fade the
+ * active tab's bottom edge and let the rule show back through it.
+ */
+.type-tabs .type-tab:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.type-tabs .type-tab[aria-selected='true']:disabled {
+  color: var(--text-soft);
+}
+
+.final-section + .final-section {
+  margin-top: 0.2rem;
+}
+
+.disclaimer {
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--radius);
+  background: var(--well);
+  box-shadow: var(--well-shadow);
 }
 
 /*

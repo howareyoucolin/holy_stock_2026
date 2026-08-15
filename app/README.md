@@ -29,6 +29,24 @@ old for Next.
 The PHP site does **not** need to be running: `/learnings` reads the same rows
 the public site serves.
 
+## Question types
+
+Chosen above the input, and remembered between sessions.
+
+| Type | Input | What the agents are asked |
+|---|---|---|
+| **General** | free text | your question, verbatim |
+| **Stock valuation** | a ticker | a fixed brief: verdict, fair value, targets, risks, catalysts |
+
+The valuation brief stamps **today's date** into the prompt and requires every
+number to come from a web lookup with its own as-of date — without that, agents
+answer from training data and quietly present a stale price as current. That is
+not hypothetical: in testing, one agent produced a $225 price for a stock trading
+at $305, and the cross-review caught and discarded it.
+
+Prompts live in `src/lib/prompts.js`, separate from the CLI plumbing in
+`agents.js`.
+
 ## How a question is answered
 
 Three rounds, so the answer you keep has been challenged before you see it:
@@ -36,7 +54,9 @@ Three rounds, so the answer you keep has been challenged before you see it:
 1. **Answer** — every agent in the roster answers independently, concurrently.
 2. **Cross-review** — every agent gets the question and *all* the answers
    (including its own) and critiques them: factual errors, omissions, which is
-   strongest.
+   strongest. Agents may change their mind, and are told not to agree just to
+   agree — a real split is more useful than false consensus. Valuation reviews
+   end with a `REVISED VERDICT:` line.
 3. **Synthesis** — one agent writes the definitive answer from the candidates
    plus the reviews, correcting whatever the reviews caught.
 

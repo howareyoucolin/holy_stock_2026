@@ -27,9 +27,17 @@ function inline(text) {
 export function parseFinal(text) {
   const lines = String(text ?? '').split('\n')
   let tldr = ''
-  const points = []
-  const caveats = []
-  let section = null
+  const sections = []
+  let current = null
+  let inTldr = false
+
+  const push = (item) => {
+    if (!current) {
+      current = { title: '', items: [] }
+      sections.push(current)
+    }
+    current.items.push(item)
+  }
 
   for (const rawLine of lines) {
     const line = rawLine.trim()
@@ -38,38 +46,70 @@ export function parseFinal(text) {
     const tldrMatch = line.match(/^\**\s*TL;?DR\s*:?\**\s*(.*)$/i)
     if (tldrMatch) {
       tldr = tldrMatch[1].replace(/^\*+|\*+$/g, '').trim()
-      section = 'tldr'
-      continue
-    }
-
-    if (/^#*\s*\**KEY POINTS\**:?$/i.test(line)) {
-      section = 'points'
-      continue
-    }
-
-    if (/^#*\s*\**(CAVEATS|WORTH KNOWING|GOTCHAS)\**:?$/i.test(line)) {
-      section = 'caveats'
+      inTldr = true
       continue
     }
 
     const bullet = line.match(/^[-*•]\s+(.*)$/)
+
+    // A heading is a markdown heading, or a short all-caps line. Bullets are
+    // checked first so an all-caps bullet is never mistaken for one.
+    const heading = !bullet && line.match(/^(?:#{1,4}\s*)?\**([^*]{2,44})\**:?$/)
+    const headingText = heading?.[1]?.trim()
+    const isHeading =
+      headingText &&
+      (line.startsWith('#') || (headingText === headingText.toUpperCase() && /[A-Z]/.test(headingText)))
+
+    if (isHeading) {
+      current = { title: headingText.replace(/:$/, ''), items: [] }
+      sections.push(current)
+      inTldr = false
+      continue
+    }
+
     if (bullet) {
-      const item = bullet[1].trim()
-      if (section === 'caveats') caveats.push(item)
-      else points.push(item)
+      push(bullet[1].trim())
+      inTldr = false
       continue
     }
 
     // A TL;DR that wrapped onto the next line.
-    if (section === 'tldr' && tldr !== '') {
+    if (inTldr && tldr !== '') {
       tldr = `${tldr} ${line}`
+      continue
     }
+
+    push(line)
   }
 
-  if (tldr === '' && points.length === 0) return null
+  const withItems = sections.filter((section) => section.items.length > 0)
 
-  return { tldr, points, caveats }
+  if (tldr === '' && withItems.length === 0) return null
+
+  return { tldr, sections: withItems }
 }
+
+// Headings the agents write, mapped to friendlier labels. KEY POINTS renders
+// untitled because it sits directly under the TL;DR.
+const SECTION_LABELS = {
+  'KEY POINTS': '',
+  CAVEATS: 'Worth knowing',
+  'WORTH KNOWING': 'Worth knowing',
+  GOTCHAS: 'Worth knowing',
+  'WHERE THEY DISAGREED': 'Where they disagreed',
+  'WATCH FOR': 'Watch for',
+}
+
+function sectionLabel(title) {
+  const key = title.toUpperCase()
+
+  if (key in SECTION_LABELS) return SECTION_LABELS[key]
+
+  return title.charAt(0) + title.slice(1).toLowerCase()
+}
+
+// Sections whose bullets read as warnings rather than findings.
+const WARN_SECTIONS = ['CAVEATS', 'WORTH KNOWING', 'GOTCHAS', 'RISKS', 'WHERE THEY DISAGREED']
 
 const COPY_ICON = (
   <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -157,24 +197,21 @@ export default function FinalAnswer({ agentId, label, state }) {
         <div className="final-body">
           {parsed.tldr && <p className="tldr">{inline(parsed.tldr)}</p>}
 
-          {parsed.points.length > 0 && (
-            <ul className="points">
-              {parsed.points.map((point, index) => (
-                <li key={index}>{inline(point)}</li>
-              ))}
-            </ul>
-          )}
+          {parsed.sections.map((section, index) => {
+            const label = sectionLabel(section.title)
+            const warn = WARN_SECTIONS.includes(section.title.toUpperCase())
 
-          {parsed.caveats.length > 0 && (
-            <>
-              <p className="caveat-title">Worth knowing</p>
-              <ul className="points caveats">
-                {parsed.caveats.map((caveat, index) => (
-                  <li key={index}>{inline(caveat)}</li>
-                ))}
-              </ul>
-            </>
-          )}
+            return (
+              <div key={index} className="final-section">
+                {label && <p className="caveat-title">{label}</p>}
+                <ul className={warn ? 'points caveats' : 'points'}>
+                  {section.items.map((item, itemIndex) => (
+                    <li key={itemIndex}>{inline(item)}</li>
+                  ))}
+                </ul>
+              </div>
+            )
+          })}
         </div>
       ) : (
         // Model ignored the format — show what it actually said.
