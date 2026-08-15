@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { askAgents, DEFAULT_EFFORT, EFFORT_LEVELS, loadAgents } from '@/lib/agents'
-import { describeTask, normalizeType, TICKER_PATTERN } from '@/lib/prompts'
+import { describeTask, normalizeRisk, normalizeType, TICKER_PATTERN } from '@/lib/prompts'
 import { ndjsonRun } from '@/lib/stream'
 import { verifyTicker } from '@/lib/tickers'
 
@@ -68,7 +68,9 @@ export async function POST(request) {
     }
   }
 
-  const task = { type, question, ticker }
+  // Anything unrecognised falls back to `default`, which adds nothing to the
+  // prompts — so a bad value can only ever be the quieter option.
+  const task = { type, question, ticker, risk: normalizeRisk(body?.risk) }
 
   const requested = String(body?.effort ?? DEFAULT_EFFORT)
 

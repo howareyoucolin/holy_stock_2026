@@ -55,6 +55,7 @@ export async function POST(request) {
         secret,
         ticker: body?.ticker,
         effort: body?.effort,
+        risk: body?.risk,
         result: body?.result,
         finalizer: body?.finalizer,
         finalizerModel: body?.finalizerModel,

@@ -9,6 +9,7 @@ import SidebarHead from './SidebarHead'
 
 const TYPE_STORAGE_KEY = 'holystocks:type'
 const EFFORT_STORAGE_KEY = 'holystocks:effort'
+const RISK_STORAGE_KEY = 'holystocks:risk'
 
 const TYPES = [
   { value: 'general', label: 'General' },
@@ -25,6 +26,16 @@ const EFFORT_OPTIONS = [
   { value: 'high', label: 'High' },
   { value: 'xhigh', label: 'Extra high' },
   { value: 'max', label: 'Max' },
+]
+
+/*
+ * How much risk the reader is carrying. `default` adds nothing to any prompt, so
+ * the agents behave exactly as they did before this existed — see RISK_LEVELS in
+ * src/lib/prompts.js, which the API validates against.
+ */
+const RISK_OPTIONS = [
+  { value: 'default', label: 'Default' },
+  { value: 'high', label: 'Reasonably high' },
 ]
 
 // Returns the stored level only if it is still one we offer, so an old or
@@ -132,6 +143,7 @@ export default function AskConsole() {
   const [question, setQuestion] = useState('')
   const [ticker, setTicker] = useState('')
   const [effort, setEffort] = useState(DEFAULT_EFFORT)
+  const [risk, setRisk] = useState('default')
   // idle → asking → reviewing → finalizing → done, or → stopped from any of them
   const [phase, setPhase] = useState('idle')
   const [answers, setAnswers] = useState(null)
@@ -177,8 +189,13 @@ export default function AskConsole() {
       if (TYPES.some((option) => option.value === savedType)) {
         setType(savedType)
       }
+
+      const savedRisk = window.localStorage.getItem(RISK_STORAGE_KEY)
+      if (RISK_OPTIONS.some((option) => option.value === savedRisk)) {
+        setRisk(savedRisk)
+      }
     } catch {
-      // Storage unavailable; the default type still applies.
+      // Storage unavailable; the defaults still apply.
     }
   }, [])
 
@@ -192,6 +209,16 @@ export default function AskConsole() {
       window.localStorage.setItem(TYPE_STORAGE_KEY, value)
     } catch {
       // Storage unavailable — the choice still applies for this session.
+    }
+  }
+
+  function changeRisk(value) {
+    setRisk(value)
+
+    try {
+      window.localStorage.setItem(RISK_STORAGE_KEY, value)
+    } catch {
+      // Storage unavailable — the selection still applies for this session.
     }
   }
 
@@ -272,6 +299,7 @@ export default function AskConsole() {
       const saved = await postRound('/api/analyses', {
         ticker: ranTask.ticker,
         effort: ranTask.effort,
+        risk: ranTask.risk,
         result: final.answer,
         finalizer: final.id,
         finalizerModel: final.modelUsed,
@@ -302,8 +330,8 @@ export default function AskConsole() {
 
     const task =
       type === 'valuation'
-        ? { type, ticker: ticker.trim().toUpperCase() }
-        : { type, question: question.trim() }
+        ? { type, ticker: ticker.trim().toUpperCase(), risk }
+        : { type, question: question.trim(), risk }
 
     /*
      * Check the symbol before anything else. /api/ask enforces this too, but
@@ -627,19 +655,36 @@ export default function AskConsole() {
             </div>
 
             <div className="card-head">
-              <div className="field-inline">
-                <label htmlFor="effort">Effort</label>
-                <select
-                  id="effort"
-                  value={effort}
-                  onChange={(event) => changeEffort(event.target.value)}
-                >
-                  {EFFORT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+              <div className="field-pair">
+                <div className="field-inline">
+                  <label htmlFor="risk">Risk</label>
+                  <select
+                    id="risk"
+                    value={risk}
+                    onChange={(event) => changeRisk(event.target.value)}
+                  >
+                    {RISK_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="field-inline">
+                  <label htmlFor="effort">Effort</label>
+                  <select
+                    id="effort"
+                    value={effort}
+                    onChange={(event) => changeEffort(event.target.value)}
+                  >
+                    {EFFORT_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 

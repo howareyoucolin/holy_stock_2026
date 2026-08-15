@@ -13,6 +13,56 @@ export function normalizeType(type) {
   return QUESTION_TYPES.includes(type) ? type : DEFAULT_TYPE
 }
 
+/*
+ * How much risk the reader is willing to carry. `default` deliberately adds
+ * nothing to any prompt — the agents behave exactly as they did before this
+ * existed, so the setting can only ever change an answer by being turned up.
+ */
+export const RISK_LEVELS = ['default', 'high']
+export const DEFAULT_RISK = 'default'
+
+export function normalizeRisk(risk) {
+  return RISK_LEVELS.includes(risk) ? risk : DEFAULT_RISK
+}
+
+/*
+ * Fixed text, chosen by an enum rather than passed through, so nothing a client
+ * sends can write instructions of its own into a prompt.
+ *
+ * Three things it is careful not to say. It does not ask for a less cautious
+ * call: that reads as "be more bullish", and would buy optimism rather than
+ * better reasoning. It does not lower the bar the thesis has to clear — a wide
+ * range of outcomes and a weak business are different things, and only the
+ * first is what this setting is about. And it separates the estimate from the
+ * decision, or the same stock quietly acquires a higher fair value whenever
+ * this is turned up, which is incoherent.
+ *
+ * It also buys the upside case a hearing, not silence about the downside. An
+ * analysis that hides what can go wrong is less useful to someone carrying more
+ * risk, not more.
+ */
+const RISK_CLAUSE = [
+  'RISK ALLOWANCE: reasonably high. The reader accepts higher volatility and deeper',
+  'drawdowns where the expected return justifies them. Do not mark an opportunity down',
+  'merely for being volatile or unconventional; weigh upside, downside and their',
+  'probabilities on the merits, and say plainly what would have to go right.',
+  '',
+  'This does not lower the bar the thesis has to clear. Do not recommend a weak business',
+  'because its upside is large: a wide range of outcomes is only worth owning when there',
+  'is a credible fundamental path to the good end of it. Say which of the two you are',
+  'looking at — an asymmetric bet on a real business, or a lottery ticket — and treat',
+  'deteriorating fundamentals, serial dilution and solvency risk as disqualifying, not as',
+  'more volatility to tolerate.',
+  '',
+  'This changes the threshold at which a position is worth taking, and the size worth',
+  'taking — not the estimates behind it. Fair value, probabilities and the risks',
+  'themselves are unchanged by who is reading. State the downside in full regardless.',
+]
+
+function riskLines(task) {
+  return normalizeRisk(task?.risk) === 'high' ? ['', ...RISK_CLAUSE, ''] : []
+}
+
 // Agents are asked as of a date; without it they answer from training data and
 // silently treat stale prices as current.
 function today() {
@@ -25,7 +75,7 @@ export function describeTask(task) {
     : String(task?.question ?? '')
 }
 
-function valuationPrompt(ticker) {
+function valuationPrompt(ticker, risk) {
   return [
     `Today's date is ${today()}. Evaluate the publicly traded stock ${ticker} as of today,`,
     'for an individual investor deciding whether to buy, hold, or sell.',
@@ -33,6 +83,7 @@ function valuationPrompt(ticker) {
     'Use web search for every number. Do not answer from memory: prices, multiples and',
     'quarterly results in your training data are stale. State the date of each figure you',
     'cite, and say plainly when something could not be verified rather than estimating it.',
+    ...risk,
     '',
     'Cover all of the following, briefly and with numbers:',
     '',
@@ -62,12 +113,13 @@ function valuationPrompt(ticker) {
 // The text actually sent to each agent in round 1.
 export function buildTaskPrompt(task) {
   const type = normalizeType(task?.type)
+  const risk = riskLines(task)
 
   if (type === 'valuation') {
-    return valuationPrompt(String(task?.ticker ?? '').toUpperCase())
+    return valuationPrompt(String(task?.ticker ?? '').toUpperCase(), risk)
   }
 
-  return String(task?.question ?? '')
+  return [String(task?.question ?? ''), ...risk].join('\n')
 }
 
 function transcript(entries) {
@@ -86,6 +138,7 @@ export function buildReviewPrompt(task, label, answers) {
     '',
     'TASK',
     subject,
+    ...riskLines(task),
     '',
     'CANDIDATE ANSWERS',
     transcript(answers),
@@ -146,6 +199,7 @@ export function buildFinalPrompt(task, answers, reviews) {
     '',
     'TASK',
     subject,
+    ...riskLines(task),
     '',
     'CANDIDATE ANSWERS',
     transcript(answers),

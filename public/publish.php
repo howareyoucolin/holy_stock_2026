@@ -24,6 +24,8 @@ const MAX_TICKER_LENGTH = 15;
 const MAX_FINALIZER_LENGTH = 32;
 const MAX_MODEL_LENGTH = 64;
 const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+// Mirrors RISK_LEVELS in app/src/lib/prompts.js.
+const RISK_LEVELS = ['default', 'high'];
 // Mirrors TICKER_PATTERN in app/src/lib/prompts.js.
 const TICKER_PATTERN = '/^[A-Za-z0-9][A-Za-z0-9.\-:]{0,14}$/';
 
@@ -51,6 +53,7 @@ $result = trim((string) ($body['result'] ?? ''));
 $finalizer = trim((string) ($body['finalizer'] ?? ''));
 $finalizerModel = trim((string) ($body['finalizerModel'] ?? ''));
 $effortLevel = (string) ($body['effort'] ?? 'medium');
+$riskLevel = (string) ($body['risk'] ?? 'default');
 
 if ($secret === '') {
     fail(401, 'A publishing key is required.');
@@ -72,6 +75,10 @@ if (!in_array($effortLevel, EFFORT_LEVELS, true)) {
     fail(400, 'Unknown effort level.');
 }
 
+if (!in_array($riskLevel, RISK_LEVELS, true)) {
+    fail(400, 'Unknown risk level.');
+}
+
 try {
     $pdo = connect_pdo();
 
@@ -90,15 +97,16 @@ try {
     $insert = $pdo->prepare(
         <<<'SQL'
 INSERT INTO stock_analyses
-    (ticker, effort_level, result, finalizer, finalizer_model, published_by, created_at)
+    (ticker, effort_level, risk_level, result, finalizer, finalizer_model, published_by, created_at)
 VALUES
-    (:ticker, :effort_level, :result, :finalizer, :finalizer_model, :published_by, NOW())
+    (:ticker, :effort_level, :risk_level, :result, :finalizer, :finalizer_model, :published_by, NOW())
 SQL
     );
 
     $insert->execute([
         'ticker' => $ticker,
         'effort_level' => $effortLevel,
+        'risk_level' => $riskLevel,
         'result' => $result,
         'finalizer' => $finalizer,
         'finalizer_model' => $finalizerModel === '' ? null : substr($finalizerModel, 0, MAX_MODEL_LENGTH),

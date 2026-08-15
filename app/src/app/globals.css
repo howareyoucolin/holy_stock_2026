@@ -448,6 +448,29 @@ button:disabled {
   margin-left: auto;
 }
 
+/* Two selects travelling together to the right of the card head. The auto
+   margin belongs to the pair, not to each control, or they would drift apart. */
+.field-pair {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.field-pair .field-inline {
+  margin-left: 0;
+}
+
+/* Narrow sidebar: let the pair wrap rather than squeeze the selects. */
+@media (max-width: 1100px) {
+  .field-pair {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.5rem 1rem;
+  }
+}
+
 .field-inline label {
   margin: 0;
   white-space: nowrap;
