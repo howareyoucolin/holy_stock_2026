@@ -1,22 +1,24 @@
 import { NextResponse } from 'next/server'
-import { DEFAULT_EFFORT, EFFORT_LEVELS } from '@/lib/agents'
-import { createStockAnalysis, describeDbError } from '@/lib/db'
-import { TICKER_PATTERN } from '@/lib/prompts'
+import { readPublishSecret } from '@/lib/secrets'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// Column widths in the stock_analyses migration. Checked here so an over-long
-// value is a 400 rather than a truncated row.
-const MAX_TICKER_LENGTH = 15
-const MAX_FINALIZER_LENGTH = 32
-const MAX_MODEL_LENGTH = 64
-
 /*
- * Saves one valuation synthesis. Nothing else in the ask flow writes to MySQL:
- * a run is kept only when the Publish button is pressed, so an analysis that
- * turned out badly leaves no trace.
+ * A forwarder, not a writer. The PHP site owns publishing: it holds the only
+ * insert into stock_analyses, and it decides whether a key is allowed to make
+ * one. This route exists to attach the key — read from `.secrets` on this
+ * machine, never exposed to the browser — and to pass the answer straight back.
+ *
+ * PUBLISH_ENDPOINT points at the deployed site by default. Point it at
+ * http://localhost:8301/publish.php to publish through the local php container
+ * instead; both reach the same database.
  */
+const PUBLISH_ENDPOINT = () =>
+  process.env.PUBLISH_ENDPOINT ?? 'https://stock.369usa.com/publish.php'
+
+const PUBLISH_TIMEOUT_MS = 20_000
+
 export async function POST(request) {
   let body
 
@@ -26,51 +28,49 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Expected a JSON body.' }, { status: 400 })
   }
 
-  const ticker = String(body?.ticker ?? '').trim().toUpperCase()
-  const result = String(body?.result ?? '').trim()
-  const finalizer = String(body?.finalizer ?? '').trim()
-  const finalizerModel = String(body?.finalizerModel ?? '').trim()
-  const effortLevel = String(body?.effort ?? DEFAULT_EFFORT)
+  const secret = readPublishSecret()
 
-  if (!TICKER_PATTERN.test(ticker) || ticker.length > MAX_TICKER_LENGTH) {
+  if (!secret) {
     return NextResponse.json(
-      { error: `"${ticker}" does not look like a ticker symbol.` },
+      {
+        error:
+          'No publishing key found. Copy .secrets.sample to .secrets at the project root and set `publish_secret`.',
+      },
       { status: 400 },
     )
   }
 
-  if (result === '') {
-    return NextResponse.json({ error: 'There is no analysis to publish.' }, { status: 400 })
-  }
+  const endpoint = PUBLISH_ENDPOINT()
 
-  if (finalizer === '' || finalizer.length > MAX_FINALIZER_LENGTH) {
-    return NextResponse.json(
-      { error: 'The agent that wrote the analysis is required.' },
-      { status: 400 },
-    )
-  }
-
-  if (!EFFORT_LEVELS.includes(effortLevel)) {
-    return NextResponse.json(
-      { error: `Effort must be one of: ${EFFORT_LEVELS.join(', ')}.` },
-      { status: 400 },
-    )
-  }
+  let response
+  let payload
 
   try {
-    const id = await createStockAnalysis({
-      ticker,
-      effortLevel,
-      result,
-      finalizer,
-      // Optional in the schema: a CLI with no configured model reports none.
-      finalizerModel: finalizerModel.slice(0, MAX_MODEL_LENGTH),
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      // Only the fields publish.php reads. `published_by` is deliberately not
+      // sent: the site derives it from the key, so it cannot be spoofed here.
+      body: JSON.stringify({
+        secret,
+        ticker: body?.ticker,
+        effort: body?.effort,
+        result: body?.result,
+        finalizer: body?.finalizer,
+        finalizerModel: body?.finalizerModel,
+      }),
+      signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS),
     })
 
-    return NextResponse.json({ id, ticker }, { status: 201 })
+    payload = await response.json()
   } catch (error) {
-    // A raw ECONNREFUSED on loopback is the least useful thing to show here:
-    // the analysis is still on screen and one command makes Publish work again.
-    return NextResponse.json({ error: describeDbError(error) }, { status: 500 })
+    return NextResponse.json(
+      { error: `Could not reach the publishing endpoint at ${endpoint} — ${error.message}` },
+      { status: 502 },
+    )
   }
+
+  // Pass the site's own verdict through, status and all, so a rejected key
+  // reads as a rejected key rather than as a generic failure.
+  return NextResponse.json(payload, { status: response.status })
 }

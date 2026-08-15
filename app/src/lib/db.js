@@ -89,28 +89,6 @@ export async function getLearning(id) {
   return rows[0] ?? null
 }
 
-/*
- * One row per published valuation. Appended, never rewritten — re-analysing a
- * ticker adds a row, so the history of a call stays readable in order, which is
- * why the table has no updated_at.
- */
-export async function createStockAnalysis({
-  ticker,
-  effortLevel,
-  result,
-  finalizer,
-  finalizerModel,
-}) {
-  const [inserted] = await pool.execute(
-    `INSERT INTO stock_analyses
-       (ticker, effort_level, result, finalizer, finalizer_model, created_at)
-     VALUES (?, ?, ?, ?, ?, NOW())`,
-    [ticker, effortLevel, result, finalizer, finalizerModel || null],
-  )
-
-  return inserted.insertId
-}
-
 export async function createLearning({
   title,
   question,

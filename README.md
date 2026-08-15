@@ -136,6 +136,35 @@ One table, `learnings`: `title`, `question`, `takeaway`, `claude_answer`,
 `codex_answer`, `is_published`, timestamps. `app/` lists all of them; `public/`
 reads only rows where `is_published = 1`.
 
+## Publishing an analysis
+
+The console never writes to MySQL. Pressing **Publish** sends the analysis to
+`public/publish.php` on the PHP site, which is the only code that inserts into
+`stock_analyses`.
+
+```
+app/ (console)  ──POST──►  publish.php  ──►  stock_analyses
+   attaches the key            checks md5(key) against `secrets`,
+   from .secrets               stamps published_by from the matching row
+```
+
+The key lives in `.secrets` at the project root (gitignored; copy
+`.secrets.sample`). It is read **server-side** by the console and forwarded over
+HTTPS — the browser never receives it. Only `md5(key)` is stored, and
+`published_by` is resolved from the matching `secrets` row rather than taken from
+the request, so a caller cannot claim someone else's name.
+
+Register or rotate a key:
+
+```bash
+./bin/add-secret.sh "Your Name"     # hashes .secrets and stores the hash
+./bin/add-secret.sh --list          # who can publish
+```
+
+`PUBLISH_ENDPOINT` in `.env` chooses which site receives the POST; it defaults to
+the deployed one. Point it at `http://localhost:8301/publish.php` to publish
+through the local container instead — both reach the same database.
+
 ## Migrations
 
 Each file in `public/migrates/` returns a name and its SQL, named
