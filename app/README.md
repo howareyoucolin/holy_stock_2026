@@ -179,7 +179,11 @@ client component needs: asking.
   `spawn` runs without a shell — so nothing typed in the UI is interpreted as a
   command.
 - Codex runs with `--sandbox read-only`, so a question cannot modify files.
-- Each agent is capped at 300s (`AGENT_TIMEOUT_MS`).
+- Each agent is capped at 300s (`AGENT_TIMEOUT_MS`) per attempt, and each round
+  gives an agent 2 attempts (`AGENT_ATTEMPTS`). A run is retried when it times
+  out, exits non-zero, or returns nothing — but not when the CLI is missing, and
+  never after a usable answer. So one stalled agent can cost 600s before the
+  round completes.
 - `resolveBin()` searches PATH, then `~/.local/bin`, then every nvm version's bin
   directory. This matters because `codex` lives under one Node version's bin
   while this app runs on another. Override with `CLAUDE_BIN`, `CODEX_BIN`, or

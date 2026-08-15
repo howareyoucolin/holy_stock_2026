@@ -7,6 +7,12 @@ import { buildFinalPrompt, buildReviewPrompt, buildTaskPrompt } from './prompts.
 
 const AGENT_TIMEOUT_MS = Number(process.env.AGENT_TIMEOUT_MS ?? 300_000)
 
+// A CLI that times out, dies mid-answer or returns nothing has usually hit
+// something transient — a cold start, a dropped connection — so it gets one more
+// go before the round moves on without it. Worth the wait: an agent missing from
+// round 1 is also missing from the cross-review and the synthesis.
+const AGENT_ATTEMPTS = Math.max(1, Number(process.env.AGENT_ATTEMPTS ?? 2))
+
 // The levels `claude --effort` accepts.
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max']
 export const DEFAULT_EFFORT = 'medium'
@@ -419,9 +425,17 @@ function runCli({ bin, args, question, readOutputFile }) {
   })
 }
 
+// A run is worth repeating when it produced no usable text — whether it failed
+// outright or exited cleanly with an empty answer, which is just as useless to
+// the rounds that follow.
+function worthRetrying(result) {
+  return result.status !== 'done' || String(result.answer ?? '').trim() === ''
+}
+
 async function askOne(adapter, question, effort, options = {}) {
   const bin = resolveBin(adapter.bin)
 
+  // Not retried: a missing binary fails the same way every time.
   if (!bin) {
     return {
       status: 'error',
@@ -430,21 +444,35 @@ async function askOne(adapter, question, effort, options = {}) {
     }
   }
 
-  const outFile = adapter.usesOutputFile
-    ? path.join(tmpdir(), `holystocks-${adapter.id}-${randomBytes(6).toString('hex')}.txt`)
-    : undefined
-
   const model = resolveModel(options, effort)
 
-  const result = await runCli({
-    bin,
-    args: adapter.args({ effort, model: model || undefined, web: wantsWeb(options), outFile }),
-    question,
-    readOutputFile: outFile,
-  })
+  let result
+  let attempts = 0
+
+  while (attempts < AGENT_ATTEMPTS) {
+    attempts += 1
+
+    // A fresh temp file per attempt: a killed run can leave a partial one behind.
+    const outFile = adapter.usesOutputFile
+      ? path.join(tmpdir(), `holystocks-${adapter.id}-${randomBytes(6).toString('hex')}.txt`)
+      : undefined
+
+    result = await runCli({
+      bin,
+      args: adapter.args({ effort, model: model || undefined, web: wantsWeb(options), outFile }),
+      question,
+      readOutputFile: outFile,
+    })
+
+    if (!worthRetrying(result)) break
+  }
+
+  // Say so when a failure survived a retry, rather than reading as one bad run.
+  const error =
+    result.error && attempts > 1 ? `${result.error} (${attempts} attempts)` : result.error
 
   // The resolved name matters: with a {effort} template it differs per request.
-  return { ...result, modelUsed: model }
+  return { ...result, error, attempts, modelUsed: model }
 }
 
 // Ask every agent listed in .agents at once; the request takes as long as the
