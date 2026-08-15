@@ -142,6 +142,11 @@ export default function AskConsole() {
   const [health, setHealth] = useState(null)
   const [log, setLog] = useState([])
   const [elapsed, setElapsed] = useState(0)
+  // The task as it was actually run, so switching the tab afterwards cannot
+  // change what Publish would save.
+  const [ranTask, setRanTask] = useState(null)
+  const [published, setPublished] = useState(null)
+  const [publishing, setPublishing] = useState(false)
   // Counts resets rather than flagging one, so the effect below fires on every
   // press instead of only the first.
   const [resets, setResets] = useState(0)
@@ -152,6 +157,9 @@ export default function AskConsole() {
   const startedRef = useRef(0)
   const seqRef = useRef(0)
   const promptRef = useRef(null)
+  // Set once the discard warning has been accepted, so moving on does not ask
+  // twice — at the button and again at the next question.
+  const discardOkRef = useRef(false)
 
   // Restored after mount rather than in the initial state: reading localStorage
   // during render would disagree with the server-rendered HTML and trip a
@@ -222,10 +230,54 @@ export default function AskConsole() {
   // Clearing the log is what brings the form back — see showLog below. The
   // results column is left alone; the next question is what replaces it.
   function reset() {
+    if (!confirmDiscard()) return
+
     setLog([])
     setElapsed(0)
     setError(null)
     setResets((previous) => previous + 1)
+  }
+
+  /*
+   * Nothing reaches the database unless Publish is pressed, so moving on is the
+   * moment an unsaved analysis is lost for good. Returns false if the user backs
+   * out. Tab closes are covered separately, by the beforeunload effect.
+   */
+  function confirmDiscard() {
+    if (!unpublished || discardOkRef.current) return true
+
+    const leave = window.confirm(
+      `The ${ranTask?.ticker} analysis has not been published. Leave without saving it to the database?`,
+    )
+
+    if (leave) {
+      discardOkRef.current = true
+    }
+
+    return leave
+  }
+
+  async function publish() {
+    if (!canPublish || publishing || published) return
+
+    setPublishing(true)
+    setError(null)
+
+    try {
+      const saved = await postRound('/api/analyses', {
+        ticker: ranTask.ticker,
+        effort: ranTask.effort,
+        result: final.answer,
+        finalizer: final.id,
+        finalizerModel: final.modelUsed,
+      })
+
+      setPublished(saved)
+    } catch (publishError) {
+      setError(`Publish failed — ${publishError.message}`)
+    } finally {
+      setPublishing(false)
+    }
   }
 
   /*
@@ -240,6 +292,9 @@ export default function AskConsole() {
 
     if (!ready) return
 
+    // Asking again is what finally discards the last analysis from the screen.
+    if (!confirmDiscard()) return
+
     const task =
       type === 'valuation'
         ? { type, ticker: ticker.trim().toUpperCase() }
@@ -250,6 +305,7 @@ export default function AskConsole() {
 
     startedRef.current = Date.now()
     seqRef.current = 0
+    discardOkRef.current = false
 
     setPhase('asking')
     setError(null)
@@ -259,6 +315,8 @@ export default function AskConsole() {
     setFinal(null)
     setLog([])
     setElapsed(0)
+    setRanTask({ ...task, effort })
+    setPublished(null)
 
     const options = { signal: controller.signal }
 
@@ -373,6 +431,34 @@ export default function AskConsole() {
     reviewing: 'Round 2 of 3 — agents cross-reviewing each other',
     finalizing: 'Round 3 of 3 — writing the final answer',
   }[phase]
+
+  /*
+   * Only a finished valuation can be published: stock_analyses is keyed by
+   * ticker, and a general question has none. `ranTask` rather than `type`, so
+   * switching the tab after a run cannot change what would be saved.
+   */
+  const hasAnalysis =
+    ranTask?.type === 'valuation' &&
+    final?.status === 'done' &&
+    String(final.answer ?? '').trim() !== ''
+  const canPublish = hasAnalysis && !busy
+  const unpublished = canPublish && !published
+
+  // Closing the tab or reloading is the one exit the app cannot intercept in
+  // code, so it goes through the browser's own warning.
+  useEffect(() => {
+    if (!unpublished) return undefined
+
+    const warn = (event) => {
+      event.preventDefault()
+      // Legacy browsers still need returnValue set; the text is theirs, not ours.
+      event.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', warn)
+
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [unpublished])
 
   // A clock that keeps moving between agents, so a slow round still looks alive.
   // Started here rather than in ask() so it stops with the run either way.
@@ -573,6 +659,24 @@ export default function AskConsole() {
           </div>
         ) : (
           <>
+            {/* Nothing is written to the database until this is pressed. */}
+            {hasAnalysis && (
+              <div className="content-head">
+                <button
+                  type="button"
+                  className={published ? 'publish-button is-published' : 'publish-button'}
+                  onClick={publish}
+                  disabled={!canPublish || publishing || Boolean(published)}
+                >
+                  {published
+                    ? `Published · #${published.id}`
+                    : publishing
+                      ? 'Publishing…'
+                      : 'Publish'}
+                </button>
+              </div>
+            )}
+
             {/* Final answer first: it is the point of the exercise. */}
             {(final || phase === 'finalizing') && (
               <section>

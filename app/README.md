@@ -141,10 +141,18 @@ offers:
 |---|---|---|
 | `claude` | `--allowedTools WebSearch WebFetch` | only those two tools — not Bash or file writes |
 | `codex` | `-c tools.web_search=true` | the native web_search tool; `--search` is interactive-only and is rejected by `exec` |
-| `cursor` | `--auto-review` | auto-approves safe tool calls; stays in read-only `--mode ask` |
+| `cursor` | `--force` | approves the search tool call; stays in read-only `--mode ask` |
 
-Deliberately *not* used: `--dangerously-skip-permissions` (claude) or `--force` /
-`--yolo` (cursor), which would also grant shell and write access.
+`--auto-review` was tried first for cursor and does not work under `-p`: its
+classifier prompts for web search rather than auto-running it, and with nobody
+there to answer, the prompt is rejected — the agent then answers from memory and
+says its searches were "rejected by the user". `--force` approves the call.
+Pairing it with `--mode ask` is what keeps the blast radius the same: asked to
+write a file or run a shell command under those flags, the CLI refuses and
+nothing is created.
+
+Deliberately *not* used: `--dangerously-skip-permissions` (claude), or `--force`
+*without* `--mode ask` (cursor), which would grant shell and write access.
 
 Set `web=false` on a line to keep that agent offline.
 

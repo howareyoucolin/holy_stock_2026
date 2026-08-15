@@ -550,6 +550,31 @@ select:disabled {
   font-weight: 600;
 }
 
+/* ---------- publish ---------- */
+
+/* Sits above the final answer, hard right — the results column has no other
+   chrome, so the corner is the button's own row. */
+.content-head {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -0.4rem;
+}
+
+.publish-button {
+  margin-top: 0;
+  padding: 0.42rem 1.05rem;
+  font-size: 0.88rem;
+}
+
+/* Saved: reads as a receipt with the row id, not as a button to press again. */
+.publish-button.is-published:disabled {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent);
+  box-shadow: none;
+  cursor: default;
+}
+
 /* ---------- run log ---------- */
 
 /*

@@ -88,9 +88,14 @@ const ADAPTERS = {
     // drive it. Set `model=` in .agents to pick a tier.
     supportsEffort: false,
     // `--mode ask` is the read-only Q&A mode; plain `--print` would otherwise
-    // have write and shell tools available. Ask mode alone also blocks the
-    // network, so `--auto-review` is added to auto-approve safe tool calls
-    // (web search) — still without leaving read-only mode.
+    // have write and shell tools available.
+    //
+    // Tool calls still need approving, and there is nobody to approve them under
+    // `-p`: `--auto-review` prompts for anything its classifier does not deem
+    // safe, and an unanswered prompt is a rejection — which is why web searches
+    // came back "rejected by the user" and the model answered from memory.
+    // `--force` approves them instead. It does not widen what ask mode allows:
+    // writes and shell are still refused, verified against the CLI.
     args: ({ model, web }) => [
       '-p',
       '--mode',
@@ -98,7 +103,7 @@ const ADAPTERS = {
       '--output-format',
       'text',
       ...(model ? ['--model', model] : []),
-      ...(web ? ['--auto-review'] : []),
+      ...(web ? ['--force'] : []),
     ],
   },
 }
