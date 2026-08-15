@@ -548,6 +548,108 @@ select:disabled {
   min-width: 0;
 }
 
+/* ---------- final answer ---------- */
+
+/* The one card meant to be read first, so it gets a surface of its own. */
+/*
+ * Same box metrics as the <pre> wells below it — padding, radius, and the head
+ * spacing all match — so the only thing setting the summary apart is the tint and
+ * the border.
+ */
+.answer-card.final-card {
+  padding: 0.85rem 0.95rem;
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  border-radius: var(--radius);
+}
+
+.final-body {
+  margin-top: 0.2rem;
+}
+
+/* Reads in one breath: larger and lighter than the bullets under it. */
+.tldr {
+  margin: 0 0 0.9rem;
+  font-size: 1.02rem;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.points {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.points li {
+  color: var(--text-soft);
+  font-size: 0.93rem;
+  line-height: 1.5;
+}
+
+.points li::marker {
+  color: var(--accent-2);
+}
+
+.caveat-title {
+  margin: 1.1rem 0 0.45rem;
+  font-size: 0.74rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.caveats li::marker {
+  color: var(--warn);
+}
+
+/*
+ * Quiet text-button for card affordances. The global `button` rule paints a solid
+ * accent CTA, so every one of those properties has to be undone here.
+ */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0.22rem 0.5rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  box-shadow: none;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.icon-button:hover:not(:disabled) {
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.22);
+  border-color: var(--border);
+  filter: none;
+  box-shadow: none;
+}
+
+.icon-button:active:not(:disabled) {
+  transform: none;
+  filter: none;
+  box-shadow: none;
+}
+
+.icon-button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.icon-button-text {
+  line-height: 1;
+}
+
 /* Section heading inside the results panel (Final answer / Answers / Review). */
 .section-title {
   margin: 0 0 0.75rem;

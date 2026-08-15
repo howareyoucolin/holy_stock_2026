@@ -499,10 +499,17 @@ function reviewPrompt(label, question, answers) {
   ].join('\n')
 }
 
+/*
+ * The synthesis is meant to be scanned, not read start to finish, so it asks for
+ * a fixed shape: a one-breath TL;DR, then short bullets. FinalAnswer.jsx parses
+ * these headings — and falls back to rendering the raw text if a model ignores
+ * the format.
+ */
 function finalPrompt(question, answers, reviews) {
   return [
     'Several AI agents answered the question below independently, then reviewed each',
-    "other's answers. Produce the single definitive answer.",
+    "other's answers. Write the single definitive answer, for a reader who wants to",
+    'scan it in a few seconds.',
     '',
     'QUESTION',
     question,
@@ -514,8 +521,26 @@ function finalPrompt(question, answers, reviews) {
     transcript(reviews),
     '',
     'Correct whatever the reviews showed to be wrong, keep what they agreed on, and',
-    'resolve any disagreement on the merits. Output only the final answer — no',
-    'preamble and no mention of this review process.',
+    'resolve any disagreement on the merits.',
+    '',
+    'Write it the way you would explain it to a friend, out loud:',
+    '- plain everyday words, short sentences, contractions are fine',
+    '- no jargon unless it is unavoidable, and then say what it means in a few words',
+    '- no hedging, no corporate or academic phrasing, no throat-clearing',
+    '- say "you" and give the recommendation straight',
+    '',
+    'Use exactly this format, with no preamble and no mention of this process:',
+    '',
+    'TL;DR: <the answer in one or two plain sentences, under 40 words>',
+    '',
+    'KEY POINTS',
+    '- <one line each, most important first, under 20 words>',
+    '- <three to six of them>',
+    '',
+    'CAVEATS',
+    '- <only real gotchas, or things the agents disagreed about>',
+    '',
+    'Omit the CAVEATS section entirely if there are none. Do not add other sections.',
   ].join('\n')
 }
 

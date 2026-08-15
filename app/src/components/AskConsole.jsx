@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import AgentAnswer from './AgentAnswer'
+import FinalAnswer from './FinalAnswer'
 import PendingAnswer from './PendingAnswer'
 import SidebarHead from './SidebarHead'
 
@@ -269,8 +270,8 @@ export default function AskConsole() {
               <section>
                 <h2 className="section-title">Final answer</h2>
                 {final ? (
-                  <AgentAnswer
-                    id={final.id}
+                  <FinalAnswer
+                    agentId={final.id}
                     label={`${final.label} · synthesis`}
                     state={final}
                   />

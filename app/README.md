@@ -40,6 +40,12 @@ Three rounds, so the answer you keep has been challenged before you see it:
 3. **Synthesis** — one agent writes the definitive answer from the candidates
    plus the reviews, correcting whatever the reviews caught.
 
+The synthesis is written to be scanned, not read straight through: a TL;DR in one
+or two sentences, then short key points, then caveats only where the agents
+genuinely disagreed. `FinalAnswer.jsx` parses that shape and renders it as a lead
+paragraph plus lists; if a model ignores the format, its raw text is shown
+verbatim rather than mangled.
+
 The rounds are separate endpoints (`/api/ask`, `/api/review`, `/api/final`) driven
 from the client, so each round appears as soon as it finishes instead of the whole
 chain landing at once. The server stays stateless between rounds: the client
