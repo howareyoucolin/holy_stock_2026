@@ -5,11 +5,12 @@
 # One agent per line; file order sets display order. Blank lines and anything
 # after a # are ignored. Comment a line out to stop asking that agent.
 #
-# Supported ids : claude, codex, cursor
+# Supported ids : claude, codex, cursor, grok
 # Supported keys: model, tiers
 #
-# Effort: the Effort selector drives `claude --effort` and codex's
-# model_reasoning_effort directly. Cursor has no effort flag — its tier is part
+# Effort: the Effort selector drives `claude --effort`, codex's
+# model_reasoning_effort and `grok --reasoning-effort` directly. Grok has no tier
+# above `high`, so xhigh and max clamp onto it. Cursor has no effort flag — its tier is part
 # of the model name — so write {effort} in the model and the selected level is
 # substituted. `tiers=` lists the levels that family actually has; anything
 # higher clamps down to the top of that list.
@@ -24,7 +25,8 @@
 # each is given the narrowest switch that allows search:
 #   claude  --allowedTools WebSearch WebFetch   (only those two tools)
 #   codex   -c tools.web_search=true
-#   cursor  --auto-review                       (stays in read-only ask mode)
+#   cursor  --force                             (stays in read-only ask mode)
+#   grok    on by default                       (--disable-web-search turns it off)
 # Set `web=false` on a line to keep that agent offline.
 #
 # Read fresh on every request, so edits take effect without restarting the dev
@@ -33,3 +35,4 @@
 claude final=true web=true
 codex web=true
 cursor model=gemini-3.7-flash-{effort} tiers=low,medium,high web=true
+grok web=true

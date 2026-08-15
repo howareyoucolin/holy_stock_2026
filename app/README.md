@@ -133,11 +133,12 @@ sets display order and `#` comments a line out:
 claude final=true web=true
 codex web=true
 cursor model=gemini-3.7-flash-{effort} tiers=low,medium,high web=true
+grok web=true
 ```
 
 | | |
 |---|---|
-| Supported ids | `claude`, `codex`, `cursor` |
+| Supported ids | `claude`, `codex`, `cursor`, `grok` |
 | Supported keys | `model`, `tiers`, `final`, `web` |
 
 Unknown ids and bad options are reported in the UI rather than silently ignored,
@@ -159,6 +160,15 @@ offers:
 | `claude` | `--allowedTools WebSearch WebFetch` | only those two tools — not Bash or file writes |
 | `codex` | `-c tools.web_search=true` | the native web_search tool; `--search` is interactive-only and is rejected by `exec` |
 | `cursor` | `--force` | approves the search tool call; stays in read-only `--mode ask` |
+| `grok` | `--tools web_search,web_fetch` | an allow-list of exactly those two — search is on by default, so `web=false` sends `--disable-web-search --tools ''` |
+
+Grok is the one that arrives headless with a full agentic toolset —
+`run_terminal_command`, `write`, `search_replace`, `spawn_subagent`. Asked to
+write a file it announces that it will, and only the approval layer stops it.
+`--tools` is an allow-list, so naming just the two web tools removes the rest
+outright; it then answers "this session has no write-file or shell tools". It
+also takes the prompt via `--prompt-file` rather than as an argv value, so the
+question stays out of `ps` like it does for the others.
 
 `--auto-review` was tried first for cursor and does not work under `-p`: its
 classifier prompts for web search rather than auto-running it, and with nobody

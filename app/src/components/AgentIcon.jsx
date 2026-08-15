@@ -26,6 +26,18 @@ const ICONS = {
       />
     </svg>
   ),
+  // Slanted cross, echoing xAI's mark.
+  grok: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M5 4.2 19 19.8M18.6 4.2 12.4 12"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.3"
+        strokeLinecap="round"
+      />
+    </svg>
+  ),
   // Shell prompt, since codex is driven as a CLI.
   codex: (
     <svg viewBox="0 0 24 24" aria-hidden="true">

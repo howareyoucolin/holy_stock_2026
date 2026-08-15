@@ -1048,6 +1048,10 @@ select:disabled {
   color: #6ed3da;
 }
 
+.avatar[data-agent='grok'] {
+  color: #b9b4c7;
+}
+
 .pill {
   padding: 0.1rem 0.5rem;
   border-radius: 999px;

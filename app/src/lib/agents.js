@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { buildFinalPrompt, buildReviewPrompt, buildTaskPrompt } from './prompts.js'
@@ -20,6 +20,17 @@ export const DEFAULT_EFFORT = 'medium'
 // Codex takes the same idea through a config override rather than a flag, and has
 // no equivalent of claude's top `max` tier — so that folds onto `xhigh`.
 const CODEX_EFFORT = {
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+  max: 'xhigh',
+}
+
+// Grok's --reasoning-effort takes "one of: xhigh, high, medium, low" — the same
+// four as codex, so `max` folds onto xhigh the same way. Passing `max` is not
+// ignored, it is a hard error, which would fail the whole round.
+const GROK_EFFORT = {
   low: 'low',
   medium: 'medium',
   high: 'high',
@@ -79,6 +90,40 @@ const ADAPTERS = {
     ],
     usesOutputFile: true,
   },
+  grok: {
+    id: 'grok',
+    label: 'Grok',
+    bin: 'grok',
+    supportsEffort: true,
+    /*
+     * `-p/--single` is the headless mode, but it takes the prompt as an argv
+     * value, and a question in argv is visible to anyone running `ps`.
+     * `--prompt-file` takes the same prompt from a file instead, so the text
+     * never reaches the process list — see usesPromptFile below.
+     *
+     * Grok arrives headless with its whole agentic toolset: run_terminal_command,
+     * write, search_replace, spawn_subagent. Asked to write a file it announces
+     * it will, and only the approval layer stops it — not something to rely on
+     * for a console that runs arbitrary questions. `--tools` is an allow-list,
+     * so naming exactly the two web tools removes the rest outright: it then
+     * answers "this session has no write-file or shell tools", verified.
+     *
+     * Offline (`web=false`) is the empty allow-list plus --disable-web-search.
+     * Search is the one switch that runs backwards here — Grok has it on by
+     * default, where the others are off until you opt in.
+     */
+    args: ({ effort, model, web, promptFile }) => [
+      '--prompt-file',
+      promptFile,
+      '--output-format',
+      'plain',
+      '--reasoning-effort',
+      GROK_EFFORT[effort],
+      ...(model ? ['--model', model] : []),
+      ...(web ? ['--tools', 'web_search,web_fetch'] : ['--disable-web-search', '--tools', '']),
+    ],
+    usesPromptFile: true,
+  },
   cursor: {
     id: 'cursor',
     label: 'Cursor',
@@ -114,6 +159,7 @@ const ALLOWED_OPTIONS = {
   claude: ['model', 'tiers', 'final', 'web'],
   codex: ['model', 'tiers', 'final', 'web'],
   cursor: ['model', 'tiers', 'final', 'web'],
+  grok: ['model', 'tiers', 'final', 'web'],
 }
 
 const TRUTHY = ['true', '1', 'yes', 'on']
@@ -560,13 +606,41 @@ async function askOne(adapter, question, effort, options = {}, signal) {
       ? path.join(tmpdir(), `holystocks-${adapter.id}-${randomBytes(6).toString('hex')}.txt`)
       : undefined
 
-    result = await runCli({
-      bin,
-      args: adapter.args({ effort, model: model || undefined, web: wantsWeb(options), outFile }),
-      question,
-      readOutputFile: outFile,
-      signal,
-    })
+    // Some CLIs only take the prompt as an argument. Handing them a file keeps
+    // the question out of argv, where `ps` would expose it — mode 0600 so it is
+    // no more readable on disk than it was in the pipe.
+    const promptFile = adapter.usesPromptFile
+      ? path.join(tmpdir(), `holystocks-${adapter.id}-prompt-${randomBytes(6).toString('hex')}.txt`)
+      : undefined
+
+    if (promptFile) {
+      writeFileSync(promptFile, question, { mode: 0o600 })
+    }
+
+    try {
+      result = await runCli({
+        bin,
+        args: adapter.args({
+          effort,
+          model: model || undefined,
+          web: wantsWeb(options),
+          outFile,
+          promptFile,
+        }),
+        // The prompt already went to a file; stdin just gets closed.
+        question: promptFile ? '' : question,
+        readOutputFile: outFile,
+        signal,
+      })
+    } finally {
+      if (promptFile) {
+        try {
+          unlinkSync(promptFile)
+        } catch {
+          // Already gone; nothing to clean up.
+        }
+      }
+    }
 
     if (!worthRetrying(result)) break
   }
