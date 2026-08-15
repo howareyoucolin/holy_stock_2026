@@ -3,26 +3,26 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CONFIG_FILE="${DEPLOY_CONFIG:-${SCRIPT_DIR}/dreamhost.env}"
+CONFIG_FILE="${DEPLOY_CONFIG:-${SCRIPT_DIR}/remote.env}"
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
   echo "Missing deploy config: ${CONFIG_FILE}" >&2
-  echo "Copy ${SCRIPT_DIR}/dreamhost.env.example to ${SCRIPT_DIR}/dreamhost.env first." >&2
+  echo "Copy ${SCRIPT_DIR}/remote.env.example to ${SCRIPT_DIR}/remote.env first." >&2
   exit 1
 fi
 
 # shellcheck disable=SC1090
 source "${CONFIG_FILE}"
 
-: "${DREAMHOST_HOST:?DREAMHOST_HOST is required}"
-: "${DREAMHOST_USERNAME:?DREAMHOST_USERNAME is required}"
-: "${DREAMHOST_REMOTE_PATH:?DREAMHOST_REMOTE_PATH is required}"
+: "${REMOTE_HOST:?REMOTE_HOST is required}"
+: "${REMOTE_USERNAME:?REMOTE_USERNAME is required}"
+: "${REMOTE_PATH:?REMOTE_PATH is required}"
 : "${PROD_DB_HOST:?PROD_DB_HOST is required}"
 : "${PROD_DB_NAME:?PROD_DB_NAME is required}"
 : "${PROD_DB_USER:?PROD_DB_USER is required}"
 : "${PROD_DB_PASSWORD:?PROD_DB_PASSWORD is required}"
 
-DREAMHOST_PORT="${DREAMHOST_PORT:-22}"
+REMOTE_PORT="${REMOTE_PORT:-22}"
 PROD_DB_PORT="${PROD_DB_PORT:-3306}"
 PROD_DB_CHARSET="${PROD_DB_CHARSET:-utf8mb4}"
 DELETE_FLAG=""
@@ -44,9 +44,9 @@ for arg in "$@"; do
   esac
 done
 
-if [[ -n "${DREAMHOST_PASSWORD:-}" ]] && ! command -v sshpass >/dev/null 2>&1; then
-  echo "sshpass is required when DREAMHOST_PASSWORD is set." >&2
-  echo "Install sshpass, or leave DREAMHOST_PASSWORD empty and use SSH key / interactive auth." >&2
+if [[ -n "${REMOTE_PASSWORD:-}" ]] && ! command -v sshpass >/dev/null 2>&1; then
+  echo "sshpass is required when REMOTE_PASSWORD is set." >&2
+  echo "Install sshpass, or leave REMOTE_PASSWORD empty and use SSH key / interactive auth." >&2
   exit 1
 fi
 
@@ -54,30 +54,30 @@ fi
 # the older bash 3.2 shipped with macOS). When a password is configured, force
 # password auth so a present-but-unusable local SSH key cannot trigger an
 # interactive passphrase prompt that would hang this non-interactive deploy.
-SSH_OPTS="-p ${DREAMHOST_PORT} -o StrictHostKeyChecking=accept-new"
+SSH_OPTS="-p ${REMOTE_PORT} -o StrictHostKeyChecking=accept-new"
 SSH_BIN="ssh"
 RSYNC_PREFIX=""
-if [[ -n "${DREAMHOST_PASSWORD:-}" ]]; then
+if [[ -n "${REMOTE_PASSWORD:-}" ]]; then
   SSH_OPTS="${SSH_OPTS} -o PreferredAuthentications=password -o PubkeyAuthentication=no"
-  export SSHPASS="${DREAMHOST_PASSWORD}"
+  export SSHPASS="${REMOTE_PASSWORD}"
   SSH_BIN="sshpass -e ssh"
   RSYNC_PREFIX="sshpass -e"
 fi
 RSYNC_RSH="ssh ${SSH_OPTS}"
 
-# Run a single command on the DreamHost server over SSH (stdin is forwarded).
+# Run a single command on the production host over SSH (stdin is forwarded).
 remote_exec() {
-  ${SSH_BIN} ${SSH_OPTS} "${DREAMHOST_USERNAME}@${DREAMHOST_HOST}" "$1"
+  ${SSH_BIN} ${SSH_OPTS} "${REMOTE_USERNAME}@${REMOTE_HOST}" "$1"
 }
 
-echo "Ensuring remote directory exists: ${DREAMHOST_REMOTE_PATH}"
+echo "Ensuring remote directory exists: ${REMOTE_PATH}"
 if [[ "${DRY_RUN}" == true ]]; then
-  echo "[dry-run] Would ensure remote directory exists: ${DREAMHOST_REMOTE_PATH}"
+  echo "[dry-run] Would ensure remote directory exists: ${REMOTE_PATH}"
 else
-  remote_exec "mkdir -p '${DREAMHOST_REMOTE_PATH}'"
+  remote_exec "mkdir -p '${REMOTE_PATH}'"
 fi
 
-echo "Deploying public/ contents to ${DREAMHOST_USERNAME}@${DREAMHOST_HOST}:${DREAMHOST_REMOTE_PATH}"
+echo "Deploying public/ contents to ${REMOTE_USERNAME}@${REMOTE_HOST}:${REMOTE_PATH}"
 cd "${PROJECT_ROOT}"
 
 # Sync only the contents of public/ into the site root so the app's front
@@ -92,18 +92,18 @@ ${RSYNC_PREFIX} rsync -az --progress ${DRY_FLAG} ${DELETE_FLAG} \
   --exclude=.DS_Store \
   -e "${RSYNC_RSH}" \
   ./public/ \
-  "${DREAMHOST_USERNAME}@${DREAMHOST_HOST}:${DREAMHOST_REMOTE_PATH}/"
+  "${REMOTE_USERNAME}@${REMOTE_HOST}:${REMOTE_PATH}/"
 
 # connect_pdo() lives in data/support/, outside public/. Ship it alongside the
 # site root so public/bootstrap.php can find it there (data/.htaccess blocks
 # direct HTTP access). --delete is deliberately NOT forwarded here: this second
 # sync has a narrower source, and mirroring deletions from it would be wrong.
-echo "Deploying data/ support scripts to ${DREAMHOST_REMOTE_PATH}/data"
+echo "Deploying data/ support scripts to ${REMOTE_PATH}/data"
 ${RSYNC_PREFIX} rsync -az --progress ${DRY_FLAG} \
   --exclude=.DS_Store \
   -e "${RSYNC_RSH}" \
   ./data/ \
-  "${DREAMHOST_USERNAME}@${DREAMHOST_HOST}:${DREAMHOST_REMOTE_PATH}/data/"
+  "${REMOTE_USERNAME}@${REMOTE_HOST}:${REMOTE_PATH}/data/"
 
 if [[ "${DRY_RUN}" == true ]]; then
   echo "[dry-run] Rsync preview complete."
@@ -111,7 +111,7 @@ else
   echo "Deploy complete."
 fi
 
-REMOTE_CONFIG_PATH="${DREAMHOST_REMOTE_PATH}/config.php"
+REMOTE_CONFIG_PATH="${REMOTE_PATH}/config.php"
 
 read -r -d '' REMOTE_CONFIG_CONTENT <<EOF || true
 <?php

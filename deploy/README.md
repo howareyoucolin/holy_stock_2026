@@ -1,7 +1,9 @@
-# DreamHost Deploy
+# Production Deploy
 
-1. Copy `dreamhost.env.example` to `dreamhost.env`.
-2. Fill in your DreamHost SSH hostname, username, password, remote path, and production database values.
+1. Copy `remote.env.example` to `remote.env`.
+2. Fill in the SSH hostname, username, password, remote path, and production
+   database values for the production host. `remote.env` is gitignored — this
+   repository is public, so nothing real belongs anywhere else.
 3. Run:
 
 ```bash
@@ -36,7 +38,7 @@ You can combine flags:
 | `data/` | `<site root>/data/`, for `connect_pdo()` |
 
 `public/config.php` is excluded from the sync and written on the server from the
-values in `dreamhost.env`, so local and production credentials stay separate.
+values in `remote.env`, so local and production credentials stay separate.
 
 `data/` has to live inside the site root because `public/` contents become the
 web root. `data/.htaccess` denies direct HTTP access to it, and

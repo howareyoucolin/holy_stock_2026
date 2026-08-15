@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import AgentAnswer from './AgentAnswer'
 import FinalAnswer from './FinalAnswer'
 import PendingAnswer from './PendingAnswer'
+import RunLog from './RunLog'
 import SidebarHead from './SidebarHead'
 
 const TYPE_STORAGE_KEY = 'holystocks:type'
@@ -39,19 +40,91 @@ function readStoredEffort() {
   }
 }
 
-async function postJson(url, body) {
+/*
+ * Posts a round and returns its result. The multi-agent rounds answer in NDJSON
+ * so each agent can be reported as it settles — `onEvent` gets those, and the
+ * closing `result` line is what comes back. Endpoints that still answer in one
+ * plain body (validation errors, round 3) fall through unchanged.
+ */
+async function postRound(url, body, { signal, onEvent } = {}) {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   })
-  const data = await response.json()
 
   if (!response.ok) {
-    throw new Error(data.error ?? 'The request failed.')
+    const failure = await response.json().catch(() => ({}))
+
+    throw new Error(failure.error ?? 'The request failed.')
   }
 
-  return data
+  if (!response.headers.get('content-type')?.includes('ndjson')) {
+    return response.json()
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let result = null
+
+  for (;;) {
+    const { value, done } = await reader.read()
+
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+
+    // A chunk can split a line, so the trailing fragment waits for the next one.
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+
+    for (const line of lines) {
+      if (line.trim() === '') continue
+
+      const event = JSON.parse(line)
+
+      if (event.type === 'error') throw new Error(event.error)
+      if (event.type === 'result') result = event
+      else onEvent?.(event)
+    }
+  }
+
+  // The stream ended without its closing line: the server died mid-round.
+  if (!result) {
+    throw new Error('The run ended before a result arrived.')
+  }
+
+  return result
+}
+
+// Durations in the log read as 2m19s / 47s, not milliseconds.
+function formatDuration(ms) {
+  const total = Math.round((ms ?? 0) / 1000)
+
+  if (total < 60) return `${total}s`
+
+  return `${Math.floor(total / 60)}m${String(total % 60).padStart(2, '0')}s`
+}
+
+// One log line for an agent that just settled.
+function describeAgent(agent, verb) {
+  const took = ` · ${formatDuration(agent.ms)}`
+  const retried = agent.attempts > 1 ? ' (retried)' : ''
+
+  if (agent.status === 'aborted') {
+    return { text: `${agent.label} stopped`, tone: 'fail' }
+  }
+
+  if (agent.status === 'done' && String(agent.answer ?? '').trim() !== '') {
+    return { text: `${agent.label} ${verb}${retried}${took}`, tone: 'ok' }
+  }
+
+  return {
+    text: `${agent.label} failed — ${agent.error ?? 'returned nothing'}${took}`,
+    tone: 'fail',
+  }
 }
 
 export default function AskConsole() {
@@ -59,7 +132,7 @@ export default function AskConsole() {
   const [question, setQuestion] = useState('')
   const [ticker, setTicker] = useState('')
   const [effort, setEffort] = useState(DEFAULT_EFFORT)
-  // idle → asking → reviewing → finalizing → done
+  // idle → asking → reviewing → finalizing → done, or → stopped from any of them
   const [phase, setPhase] = useState('idle')
   const [answers, setAnswers] = useState(null)
   const [reviews, setReviews] = useState(null)
@@ -67,6 +140,18 @@ export default function AskConsole() {
   const [final, setFinal] = useState(null)
   const [error, setError] = useState(null)
   const [health, setHealth] = useState(null)
+  const [log, setLog] = useState([])
+  const [elapsed, setElapsed] = useState(0)
+  // Counts resets rather than flagging one, so the effect below fires on every
+  // press instead of only the first.
+  const [resets, setResets] = useState(0)
+
+  // Refs, not state: the log appenders read these from inside a promise chain
+  // that would otherwise close over a stale render.
+  const abortRef = useRef(null)
+  const startedRef = useRef(0)
+  const seqRef = useRef(0)
+  const promptRef = useRef(null)
 
   // Restored after mount rather than in the initial state: reading localStorage
   // during render would disagree with the server-rendered HTML and trip a
@@ -118,6 +203,31 @@ export default function AskConsole() {
       .catch(() => setHealth({ db: { ok: false, error: 'Health check failed.' } }))
   }, [])
 
+  // Leaving the page kills the CLIs too — the request's abort signal is what the
+  // route handler passes down to spawn().
+  useEffect(() => () => abortRef.current?.abort(), [])
+
+  function addLog(text, tone) {
+    seqRef.current += 1
+
+    const entry = { id: seqRef.current, at: Date.now() - startedRef.current, text, tone }
+
+    setLog((previous) => [...previous, entry])
+  }
+
+  function stop() {
+    abortRef.current?.abort()
+  }
+
+  // Clearing the log is what brings the form back — see showLog below. The
+  // results column is left alone; the next question is what replaces it.
+  function reset() {
+    setLog([])
+    setElapsed(0)
+    setError(null)
+    setResets((previous) => previous + 1)
+  }
+
   /*
    * Three rounds, driven from here rather than server-side, so each one appears
    * as soon as it finishes instead of the whole chain landing at once:
@@ -135,15 +245,42 @@ export default function AskConsole() {
         ? { type, ticker: ticker.trim().toUpperCase() }
         : { type, question: question.trim() }
 
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    startedRef.current = Date.now()
+    seqRef.current = 0
+
     setPhase('asking')
     setError(null)
     setAnswers(null)
     setReviews(null)
     setSkippedReview(null)
     setFinal(null)
+    setLog([])
+    setElapsed(0)
+
+    const options = { signal: controller.signal }
 
     try {
-      const round1 = await postJson('/api/ask', { ...task, effort })
+      addLog(`Round 1 — asking ${roster.length} agent${roster.length === 1 ? '' : 's'}`)
+
+      const round1 = await postRound(
+        '/api/ask',
+        { ...task, effort },
+        {
+          ...options,
+          // Each agent lands in the log and in the results column the moment it
+          // returns, instead of the whole round appearing at once.
+          onEvent: (streamed) => {
+            const { text, tone } = describeAgent(streamed.agent, 'answered')
+
+            addLog(text, tone)
+            setAnswers((previous) => [...(previous ?? []), streamed.agent])
+          },
+        },
+      )
+
       setAnswers(round1.results)
 
       const answered = round1.results.filter(
@@ -152,35 +289,71 @@ export default function AskConsole() {
 
       // Cross-review needs at least two answers to compare.
       if (answered.length < 2) {
-        setSkippedReview(
+        const why =
           answered.length === 0
             ? 'No agent produced an answer, so there was nothing to review.'
-            : 'Only one agent answered, so there was nothing to cross-review.',
-        )
+            : 'Only one agent answered, so there was nothing to cross-review.'
+
+        addLog(why, 'fail')
+        setSkippedReview(why)
         setPhase('done')
         return
       }
 
       setPhase('reviewing')
-      const round2 = await postJson('/api/review', {
-        task,
-        effort,
-        answers: round1.results,
-      })
+      addLog(`Round 2 — ${answered.length} answers to cross-review`)
+
+      const round2 = await postRound(
+        '/api/review',
+        { task, effort, answers: round1.results },
+        {
+          ...options,
+          onEvent: (streamed) => {
+            const { text, tone } = describeAgent(streamed.agent, 'reviewed')
+
+            addLog(text, tone)
+            setReviews((previous) => [...(previous ?? []), streamed.agent])
+          },
+        },
+      )
+
       setReviews(round2.reviews)
 
       setPhase('finalizing')
-      const round3 = await postJson('/api/final', {
-        task,
-        effort,
-        answers: round1.results,
-        reviews: round2.reviews,
-      })
+      addLog('Round 3 — writing the final answer')
+
+      const round3 = await postRound(
+        '/api/final',
+        { task, effort, answers: round1.results, reviews: round2.reviews },
+        options,
+      )
+
       setFinal(round3.final)
+      addLog(
+        round3.final
+          ? describeAgent(round3.final, 'wrote the final answer').text
+          : (round3.error ?? 'No final answer.'),
+        round3.final?.status === 'done' ? 'ok' : 'fail',
+      )
       setPhase('done')
     } catch (requestError) {
-      setError(requestError.message)
-      setPhase('done')
+      // An abort is the Stop button doing its job, not a failure to report.
+      if (controller.signal.aborted) {
+        addLog('Stopped.', 'fail')
+        setPhase('stopped')
+      } else {
+        addLog(`Failed — ${requestError.message}`, 'fail')
+        setError(requestError.message)
+        setPhase('done')
+      }
+    } finally {
+      // The ticker stops with the run, so the clock would otherwise freeze a
+      // beat short of the last line it sits above.
+      setElapsed(Date.now() - startedRef.current)
+
+      if (abortRef.current === controller) {
+        abortRef.current = null
+      }
     }
   }
 
@@ -200,6 +373,53 @@ export default function AskConsole() {
     reviewing: 'Round 2 of 3 — agents cross-reviewing each other',
     finalizing: 'Round 3 of 3 — writing the final answer',
   }[phase]
+
+  // A clock that keeps moving between agents, so a slow round still looks alive.
+  // Started here rather than in ask() so it stops with the run either way.
+  useEffect(() => {
+    if (!busy) return undefined
+
+    const timer = setInterval(() => setElapsed(Date.now() - startedRef.current), 1000)
+
+    return () => clearInterval(timer)
+  }, [busy])
+
+  /*
+   * The log takes the form's place from submission until it is dismissed: while
+   * the run is in flight nothing on the form can be changed anyway, and once it
+   * finishes the log is the account of what just happened. Asking again clears
+   * it, which is the only thing that brings the form back.
+   */
+  const showLog = busy || log.length > 0
+
+  // Focus follows the form back, so the next question can be typed straight
+  // away. Skipped on first mount, where nothing was dismissed.
+  useEffect(() => {
+    if (resets > 0) {
+      promptRef.current?.focus()
+    }
+  }, [resets])
+
+  // Answers and reviews arrive one agent at a time, so the column pairs each
+  // roster slot with its result and leaves a skeleton where one is still out.
+  function renderRound(entries, running, label) {
+    const byId = new Map((entries ?? []).map((entry) => [entry.id, entry]))
+
+    return roster.map((agent) => {
+      const state = byId.get(agent.id)
+
+      if (state) {
+        return (
+          <AgentAnswer key={agent.id} id={agent.id} label={label(agent.label)} state={state} />
+        )
+      }
+
+      // Not back yet — but only still coming if that round is the live one.
+      return running ? (
+        <PendingAnswer key={agent.id} id={agent.id} label={label(agent.label)} />
+      ) : null
+    })
+  }
 
   return (
     <>
@@ -244,6 +464,21 @@ export default function AskConsole() {
 
           {error && <p className="banner">{error}</p>}
 
+          {showLog && (
+            <RunLog
+              entries={log}
+              elapsed={elapsed}
+              phaseLabel={phaseLabel}
+              status={busy ? 'running' : phase === 'stopped' ? 'stopped' : 'done'}
+              onStop={stop}
+              onReset={reset}
+            />
+          )}
+
+          {/* Hidden for as long as the log is up. What was typed survives the
+              round trip: the inputs are controlled, so the state outlives the
+              unmount. */}
+          {!showLog && (
           <form onSubmit={ask} className="card-flat">
             <div className="type-tabs" role="tablist" aria-label="Question type">
               {TYPES.map((option) => (
@@ -253,7 +488,6 @@ export default function AskConsole() {
                   role="tab"
                   className="type-tab"
                   aria-selected={type === option.value}
-                  disabled={busy}
                   onClick={() => changeType(option.value)}
                 >
                   {option.label}
@@ -267,7 +501,6 @@ export default function AskConsole() {
                 <select
                   id="effort"
                   value={effort}
-                  disabled={busy}
                   onChange={(event) => changeEffort(event.target.value)}
                 >
                   {EFFORT_OPTIONS.map((option) => (
@@ -284,6 +517,7 @@ export default function AskConsole() {
                 <label htmlFor="ticker">Ticker</label>
                 <input
                   id="ticker"
+                  ref={promptRef}
                   type="text"
                   value={ticker}
                   maxLength={15}
@@ -302,6 +536,7 @@ export default function AskConsole() {
                 <label htmlFor="question">Your question</label>
                 <textarea
                   id="question"
+                  ref={promptRef}
                   rows={8}
                   value={question}
                   maxLength={4000}
@@ -311,9 +546,8 @@ export default function AskConsole() {
               </>
             )}
 
-            <button type="submit" disabled={busy || !ready || roster.length === 0}>
-              {busy && <span className="spinner" aria-hidden="true" />}
-              {busy ? 'Working…' : isValuation ? 'Analyze Stock' : 'Ask AI Agents'}
+            <button type="submit" disabled={!ready || roster.length === 0}>
+              {isValuation ? 'Analyze Stock' : 'Ask AI Agents'}
             </button>
 
             {ignoresEffort.length > 0 && (
@@ -323,9 +557,8 @@ export default function AskConsole() {
                 <code>.agents</code> instead.
               </p>
             )}
-
-            {phaseLabel && <p className="muted">{phaseLabel}</p>}
           </form>
+          )}
         </div>
       </aside>
 
@@ -357,15 +590,11 @@ export default function AskConsole() {
             )}
 
             <section>
-              <h2 className="section-title">Answers{answers ? ` (${answers.length})` : ''}</h2>
+              <h2 className="section-title">
+                Answers{answers ? ` (${answers.length}/${roster.length})` : ''}
+              </h2>
               <div className="answer-stack">
-                {answers
-                  ? answers.map((agent) => (
-                      <AgentAnswer key={agent.id} id={agent.id} label={agent.label} state={agent} />
-                    ))
-                  : roster.map((agent) => (
-                      <PendingAnswer key={agent.id} id={agent.id} label={agent.label} />
-                    ))}
+                {renderRound(answers, phase === 'asking', (label) => label)}
               </div>
             </section>
 
@@ -382,22 +611,7 @@ export default function AskConsole() {
               <section>
                 <h2 className="section-title">Cross-review</h2>
                 <div className="answer-stack">
-                  {reviews
-                    ? reviews.map((agent) => (
-                        <AgentAnswer
-                          key={agent.id}
-                          id={agent.id}
-                          label={`${agent.label} reviews`}
-                          state={agent}
-                        />
-                      ))
-                    : roster.map((agent) => (
-                        <PendingAnswer
-                          key={agent.id}
-                          id={agent.id}
-                          label={`${agent.label} reviews`}
-                        />
-                      ))}
+                  {renderRound(reviews, phase === 'reviewing', (label) => `${label} reviews`)}
                 </div>
               </section>
             )}

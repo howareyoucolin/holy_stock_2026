@@ -16,18 +16,18 @@ Two halves with one database:
    app/ (local, Next.js)                     public/ (deployed PHP)
    ask claude + codex                        read-only listing
    write takeaways  ─────►  remote MySQL  ◄─────  read
-   preview rows     ◄─────   holy_stock
+   preview rows     ◄─────  one database
 ```
 
 ## Stack
 
 - **PHP 8.2 + Apache** in Docker (`php:8.2-apache`, document root `public/`)
 - **Next.js 16 + React 19** in `app/`, run natively on the host
-- **Remote MySQL** (`mysql.369usa.com`), reached locally through an SSH tunnel
+- **Remote MySQL** on the shared host, reached locally through an SSH tunnel
 
 ## Quick start
 
-The MySQL user is granted only from DreamHost's own subnet, so **local access
+The MySQL user is granted only from the provider's own subnet, so **local access
 requires the tunnel** — a direct connection is refused no matter the credentials.
 
 ```bash
@@ -81,9 +81,9 @@ docker exec holy_stocks_php php /var/www/html/public/migrate.php
 
 ## The tunnel
 
-`369usabc` is granted from `173.236.128.0/255.255.128.0` — DreamHost's own
-network. Forwarding through the DreamHost server makes the connection arrive from
-inside that subnet, which is what the grant expects.
+The MySQL user is granted only from the provider's own network. Forwarding
+through the production host makes the connection arrive from inside that subnet,
+which is what the grant expects.
 
 ```bash
 npm run tunnel          # 127.0.0.1 only — all the Next console needs
@@ -96,7 +96,7 @@ reaches the host as `host.docker.internal`, which does not resolve to loopback
 from inside the container — while that is open, other machines on your LAN can
 reach port 13307.
 
-Production never uses the tunnel: it talks to `mysql.369usa.com` directly, from
+Production never uses the tunnel: it talks to the MySQL host directly, from
 inside the granted subnet.
 
 ## Configuration
@@ -109,7 +109,7 @@ inside the granted subnet.
 
 Credentials resolve in the order `DB_DSN` → individual `DB_*` vars →
 `public/config.php`. `.env`, `.agents`, `public/config.php`, and
-`deploy/dreamhost.env` are all gitignored; `.env.example` and `.agents.example`
+`deploy/remote.env` are all gitignored; `.env.example` and `.agents.example`
 are committed.
 
 ## Layout
@@ -127,7 +127,7 @@ data/support/db.php    connect_pdo() — shared PDO factory
 app/                   local-only Next.js console (see app/README.md)
 bin/db-tunnel.sh       SSH tunnel to the remote MySQL
 bin/dev.sh             starts the console, picking a new enough Node
-deploy/                DreamHost deploy (see deploy/README.md)
+deploy/                production deploy (see deploy/README.md)
 ```
 
 ## Database

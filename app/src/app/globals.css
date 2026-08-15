@@ -550,6 +550,132 @@ select:disabled {
   font-weight: 600;
 }
 
+/* ---------- run log ---------- */
+
+/*
+ * Stands in for the form while a question is running. Recessed like the answer
+ * wells opposite, so it reads as output rather than as something to fill in.
+ */
+.run-log {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.85rem 0.95rem 1rem;
+  background: var(--well);
+  border-radius: var(--radius);
+  box-shadow: var(--well-shadow);
+}
+
+.run-log-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+/* Tabular figures: the seconds tick without the line shifting under them. */
+.run-clock {
+  margin-left: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-soft);
+}
+
+.run-phase {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-soft);
+}
+
+.run-lines {
+  display: grid;
+  align-content: start;
+  gap: 0.34rem;
+  /* Tall enough for a full three-round run, capped so the form's return does
+     not push the rest of the sidebar off-screen. */
+  max-height: 15rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.run-line {
+  display: flex;
+  gap: 0.55rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--text-soft);
+}
+
+.run-at {
+  flex: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.run-text {
+  min-width: 0;
+}
+
+.run-ok .run-text {
+  color: var(--ok);
+}
+
+.run-fail .run-text {
+  color: var(--fail);
+}
+
+/* Once the run is over this is the way on, so it keeps the accent fill of the
+   ask button it stands in for — just sized to sit inside the panel. */
+.run-again {
+  justify-self: start;
+  margin-top: 0.4rem;
+  padding: 0.45rem 1rem;
+  font-size: 0.88rem;
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.run-again:hover:not(:disabled) {
+  filter: none;
+  background: color-mix(in srgb, var(--accent) 88%, black);
+  box-shadow: none;
+}
+
+.run-again:active:not(:disabled) {
+  transform: none;
+  filter: none;
+  background: color-mix(in srgb, var(--accent) 78%, black);
+  box-shadow: none;
+}
+
+/* Stop is a way out, not the main action — outlined, so it never competes with
+   the accent-filled ask button it replaces. */
+.run-stop {
+  justify-self: start;
+  margin-top: 0.25rem;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.86rem;
+  color: var(--fail);
+  background: none;
+  border: 1px solid color-mix(in srgb, var(--fail) 45%, transparent);
+  box-shadow: none;
+}
+
+.run-stop:hover:not(:disabled) {
+  filter: none;
+  background: color-mix(in srgb, var(--fail) 12%, transparent);
+  box-shadow: none;
+}
+
+.run-stop:active:not(:disabled) {
+  transform: none;
+  filter: none;
+  background: color-mix(in srgb, var(--fail) 18%, transparent);
+  box-shadow: none;
+}
+
 /* Half-width column is too narrow for two answers abreast, so stack them. */
 .answer-stack {
   display: grid;

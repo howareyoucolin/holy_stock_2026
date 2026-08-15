@@ -10,7 +10,7 @@ return [
     'db' => [
         'host' => 'your-remote-mysql-host.example.com',
         'port' => '3306',
-        'database' => 'holy_stocks',
+        'database' => 'your_database_name',
         'username' => 'your_db_username',
         'password' => 'your_db_password',
         'charset' => 'utf8mb4',

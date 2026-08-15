@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 #
-# Opens an SSH tunnel to the remote MySQL through the DreamHost server.
+# Opens an SSH tunnel to the remote MySQL through the production host.
 #
-# Why this is needed: the `369usabc` MySQL user is granted only from DreamHost's
-# own subnet (173.236.128.0/255.255.128.0), so a direct connection from this Mac
-# is rejected with "Access denied" no matter what credentials are used. Forwarding
-# through DreamHost makes the connection arrive from inside that subnet, which is
-# what the grant expects. Production is unaffected — it talks to
-# mysql.369usa.com directly and never uses this tunnel.
+# Why this is needed: the MySQL user is granted only from the provider's own
+# subnet, so a direct connection from this Mac is rejected with "Access denied"
+# no matter what credentials are used. Forwarding through the production host
+# makes the connection arrive from inside that subnet, which is what the grant
+# expects. Production is unaffected — it talks to the MySQL host directly and
+# never uses this tunnel.
+#
+# The hostnames themselves come from deploy/remote.env, which is gitignored —
+# this repository is public, so no real hostnames live in it.
 #
 # Usage:
 #   ./bin/db-tunnel.sh              # bind 127.0.0.1 only (enough for app/)
@@ -18,7 +21,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CONFIG_FILE="${DEPLOY_CONFIG:-${PROJECT_ROOT}/deploy/dreamhost.env}"
+CONFIG_FILE="${DEPLOY_CONFIG:-${PROJECT_ROOT}/deploy/remote.env}"
 
 LOCAL_PORT="${DB_TUNNEL_PORT:-13307}"
 BIND_ADDR="127.0.0.1"
@@ -50,7 +53,7 @@ fi
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
   echo "Missing deploy config: ${CONFIG_FILE}" >&2
-  echo "Copy deploy/dreamhost.env.example to deploy/dreamhost.env first." >&2
+  echo "Copy deploy/remote.env.example to deploy/remote.env first." >&2
   exit 1
 fi
 
@@ -58,37 +61,37 @@ fi
 # shellcheck disable=SC1090
 source "${CONFIG_FILE}"
 
-: "${DREAMHOST_HOST:?DREAMHOST_HOST is required}"
-: "${DREAMHOST_USERNAME:?DREAMHOST_USERNAME is required}"
+: "${REMOTE_HOST:?REMOTE_HOST is required}"
+: "${REMOTE_USERNAME:?REMOTE_USERNAME is required}"
 : "${PROD_DB_HOST:?PROD_DB_HOST is required}"
 
 REMOTE_DB_PORT="${PROD_DB_PORT:-3306}"
-SSH_PORT="${DREAMHOST_PORT:-22}"
+SSH_PORT="${REMOTE_PORT:-22}"
 
 if pgrep -f "${LOCAL_PORT}:mysql" >/dev/null 2>&1; then
   echo "Tunnel already running on port ${LOCAL_PORT}."
   exit 0
 fi
 
-if [[ -n "${DREAMHOST_PASSWORD:-}" ]] && ! command -v sshpass >/dev/null 2>&1; then
-  echo "sshpass is required when DREAMHOST_PASSWORD is set." >&2
+if [[ -n "${REMOTE_PASSWORD:-}" ]] && ! command -v sshpass >/dev/null 2>&1; then
+  echo "sshpass is required when REMOTE_PASSWORD is set." >&2
   exit 1
 fi
 
 SSH_OPTS="-p ${SSH_PORT} -o StrictHostKeyChecking=accept-new -o ExitOnForwardFailure=yes -o ServerAliveInterval=30"
 SSH_BIN="ssh"
-if [[ -n "${DREAMHOST_PASSWORD:-}" ]]; then
+if [[ -n "${REMOTE_PASSWORD:-}" ]]; then
   SSH_OPTS="${SSH_OPTS} -o PreferredAuthentications=password -o PubkeyAuthentication=no"
-  export SSHPASS="${DREAMHOST_PASSWORD}"
+  export SSHPASS="${REMOTE_PASSWORD}"
   SSH_BIN="sshpass -e ssh"
 fi
 
-echo "Opening tunnel ${BIND_ADDR}:${LOCAL_PORT} -> ${PROD_DB_HOST}:${REMOTE_DB_PORT} via ${DREAMHOST_HOST}"
+echo "Opening tunnel ${BIND_ADDR}:${LOCAL_PORT} -> ${PROD_DB_HOST}:${REMOTE_DB_PORT} via ${REMOTE_HOST}"
 
 # -f backgrounds after auth, -N means no remote command (forwarding only).
 ${SSH_BIN} ${SSH_OPTS} -f -N \
   -L "${BIND_ADDR}:${LOCAL_PORT}:${PROD_DB_HOST}:${REMOTE_DB_PORT}" \
-  "${DREAMHOST_USERNAME}@${DREAMHOST_HOST}"
+  "${REMOTE_USERNAME}@${REMOTE_HOST}"
 
 sleep 2
 

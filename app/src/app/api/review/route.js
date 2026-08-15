@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { DEFAULT_EFFORT, EFFORT_LEVELS, reviewAnswers } from '@/lib/agents'
+import { ndjsonRun } from '@/lib/stream'
 
 // child_process needs the Node runtime, not the edge one.
 export const runtime = 'nodejs'
@@ -37,9 +38,10 @@ export async function POST(request) {
     )
   }
 
-  try {
-    return NextResponse.json(await reviewAnswers(task, effort, answers))
-  } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  return ndjsonRun((write) =>
+    reviewAnswers(task, effort, answers, {
+      signal: request.signal,
+      onAgent: (agent) => write({ type: 'agent', agent }),
+    }),
+  )
 }

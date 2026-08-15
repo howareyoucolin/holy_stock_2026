@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { askAgents, DEFAULT_EFFORT, EFFORT_LEVELS, loadAgents } from '@/lib/agents'
 import { describeTask, normalizeType, TICKER_PATTERN } from '@/lib/prompts'
+import { ndjsonRun } from '@/lib/stream'
 
 // child_process needs the Node runtime, not the edge one.
 export const runtime = 'nodejs'
@@ -69,11 +70,14 @@ export async function POST(request) {
     )
   }
 
-  try {
-    const answers = await askAgents(task, requested)
+  // Everything above answers in one plain JSON body, so a bad request still gets
+  // a real status code. Only the long part streams.
+  return ndjsonRun(async (write) => {
+    const answers = await askAgents(task, requested, {
+      signal: request.signal,
+      onAgent: (agent) => write({ type: 'agent', agent }),
+    })
 
-    return NextResponse.json({ task, subject: describeTask(task), ...answers })
-  } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+    return { task, subject: describeTask(task), ...answers }
+  })
 }

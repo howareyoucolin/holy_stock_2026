@@ -352,24 +352,112 @@ export function resolveBin(name) {
   return null
 }
 
+/*
+ * Every child currently running, so shutting the server down does not strand
+ * them: the children are detached (see runCli) and lead their own process
+ * groups, so a Ctrl-C aimed at the server's group no longer reaches them.
+ *
+ * Kept on globalThis, like the mysql pool — a hot reload re-evaluates this
+ * module, and the new copy must not lose the CLIs the old one started.
+ */
+const globalForAgents = globalThis
+const running = (globalForAgents.__holyStocksRunning ??= new Set())
+
+// Once shutdown starts, a killed CLI must not be retried: the retry would spawn
+// a fresh one into a server that is on its way out, and outlive it. Global for
+// the same reason as the set above — the flag has to outlive a reload.
+function shuttingDown() {
+  return globalForAgents.__holyStocksShuttingDown === true
+}
+
+function killRunning() {
+  globalForAgents.__holyStocksShuttingDown = true
+
+  for (const child of running) killTree(child)
+}
+
+// Registered once per process, not once per hot reload — otherwise every edit
+// adds another listener until Node starts warning about a leak.
+if (!globalForAgents.__holyStocksShutdownHooked) {
+  globalForAgents.__holyStocksShutdownHooked = true
+
+  process.on('exit', killRunning)
+
+  // Ctrl-C used to reach the CLIs on its own, as members of the server's process
+  // group. Detached, they no longer are, so shutdown has to kill them here.
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+      killRunning()
+
+      // Node stops terminating on its own as soon as a signal has a listener. If
+      // ours is the only one, nothing else is going to exit for us.
+      if (process.listenerCount(signal) === 1) {
+        process.exit(signal === 'SIGINT' ? 130 : 143)
+      }
+    })
+  }
+}
+
+// Kills the CLI and anything it shelled out to. A plain child.kill() reaches
+// only the process we spawned, leaving its grandchildren to run on unparented —
+// which is exactly the work Stop is meant to end.
+function killTree(child) {
+  try {
+    // Negative pid means the whole process group.
+    process.kill(-child.pid, 'SIGKILL')
+  } catch {
+    // Group already gone, or never created; the direct child is all there is.
+    child.kill('SIGKILL')
+  }
+}
+
 // Run one CLI with the question on stdin, never as a shell argument, so no part
 // of the user's text is interpreted as a command.
-function runCli({ bin, args, question, readOutputFile }) {
+//
+// `signal` is the request's own abort signal: when the browser drops the
+// connection — the Stop button, a closed tab — the CLI is killed rather than
+// left burning tokens for the rest of its timeout.
+function runCli({ bin, args, question, readOutputFile, signal }) {
   return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve({ status: 'aborted', answer: '', error: 'Stopped.' })
+      return
+    }
+
     const child = spawn(bin, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
       // No shell: argv goes to execve directly.
       shell: false,
+      // Its own process group, so killTree() can take the CLI's own children
+      // with it. We never unref: the run is still awaited as before.
+      detached: true,
     })
+
+    running.add(child)
 
     let stdout = ''
     let stderr = ''
     let timedOut = false
+    let aborted = false
 
     const timer = setTimeout(() => {
       timedOut = true
-      child.kill('SIGKILL')
+      killTree(child)
     }, AGENT_TIMEOUT_MS)
+
+    const onAbort = () => {
+      aborted = true
+      killTree(child)
+    }
+
+    signal?.addEventListener('abort', onAbort, { once: true })
+
+    const settle = (result) => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      running.delete(child)
+      resolve(result)
+    }
 
     child.stdout.on('data', (chunk) => {
       stdout += chunk
@@ -378,16 +466,22 @@ function runCli({ bin, args, question, readOutputFile }) {
       stderr += chunk
     })
 
+    // A killed child may not have read its stdin yet, and the resulting EPIPE
+    // would otherwise surface as an unhandled stream error.
+    child.stdin.on('error', () => {})
+
     child.on('error', (error) => {
-      clearTimeout(timer)
-      resolve({ status: 'error', answer: '', error: error.message })
+      settle({ status: 'error', answer: '', error: error.message })
     })
 
     child.on('close', (code) => {
-      clearTimeout(timer)
+      if (aborted || shuttingDown()) {
+        settle({ status: 'aborted', answer: '', error: 'Stopped.' })
+        return
+      }
 
       if (timedOut) {
-        resolve({
+        settle({
           status: 'error',
           answer: '',
           error: `Timed out after ${AGENT_TIMEOUT_MS / 1000}s.`,
@@ -410,7 +504,7 @@ function runCli({ bin, args, question, readOutputFile }) {
       }
 
       if (code !== 0) {
-        resolve({
+        settle({
           status: 'error',
           answer,
           error: stderr.trim() || `Exited with code ${code}.`,
@@ -418,7 +512,7 @@ function runCli({ bin, args, question, readOutputFile }) {
         return
       }
 
-      resolve({ status: 'done', answer, error: null })
+      settle({ status: 'done', answer, error: null })
     })
 
     child.stdin.end(question)
@@ -427,13 +521,16 @@ function runCli({ bin, args, question, readOutputFile }) {
 
 // A run is worth repeating when it produced no usable text — whether it failed
 // outright or exited cleanly with an empty answer, which is just as useless to
-// the rounds that follow.
+// the rounds that follow. A stopped run is not retried: nobody is waiting for it.
 function worthRetrying(result) {
+  if (result.status === 'aborted' || shuttingDown()) return false
+
   return result.status !== 'done' || String(result.answer ?? '').trim() === ''
 }
 
-async function askOne(adapter, question, effort, options = {}) {
+async function askOne(adapter, question, effort, options = {}, signal) {
   const bin = resolveBin(adapter.bin)
+  const startedAt = performance.now()
 
   // Not retried: a missing binary fails the same way every time.
   if (!bin) {
@@ -441,6 +538,7 @@ async function askOne(adapter, question, effort, options = {}) {
       status: 'error',
       answer: '',
       error: `Could not find the \`${adapter.bin}\` CLI. Set ${binEnvName(adapter.bin)} to its full path.`,
+      ms: 0,
     }
   }
 
@@ -462,6 +560,7 @@ async function askOne(adapter, question, effort, options = {}) {
       args: adapter.args({ effort, model: model || undefined, web: wantsWeb(options), outFile }),
       question,
       readOutputFile: outFile,
+      signal,
     })
 
     if (!worthRetrying(result)) break
@@ -469,28 +568,59 @@ async function askOne(adapter, question, effort, options = {}) {
 
   // Say so when a failure survived a retry, rather than reading as one bad run.
   const error =
-    result.error && attempts > 1 ? `${result.error} (${attempts} attempts)` : result.error
+    result.error && attempts > 1 && result.status !== 'aborted'
+      ? `${result.error} (${attempts} attempts)`
+      : result.error
 
   // The resolved name matters: with a {effort} template it differs per request.
-  return { ...result, error, attempts, modelUsed: model }
+  // `ms` is what the run log reports back as each agent lands.
+  return {
+    ...result,
+    error,
+    attempts,
+    modelUsed: model,
+    ms: Math.round(performance.now() - startedAt),
+  }
+}
+
+/*
+ * Runs one agent per roster entry, concurrently, and reports each one the moment
+ * it settles rather than only when the slowest is done — that per-agent event is
+ * what the sidebar log is built from. The returned array keeps roster order
+ * regardless of who finished first, so the results column does not reshuffle.
+ */
+function askEach(agents, buildPrompt, level, { signal, onAgent } = {}) {
+  return Promise.all(
+    agents.map(async (agent) => {
+      const result = {
+        id: agent.id,
+        label: agent.label,
+        // Reported so the UI can say when an agent ignored the chosen effort.
+        effortApplied: agent.supportsEffort,
+        ...(await askOne(
+          ADAPTERS[agent.id],
+          buildPrompt(agent),
+          level,
+          agent.options,
+          signal,
+        )),
+      }
+
+      onAgent?.(result)
+
+      return result
+    }),
+  )
 }
 
 // Ask every agent listed in .agents at once; the request takes as long as the
 // slowest one.
-export async function askAgents(task, effort = DEFAULT_EFFORT) {
+export async function askAgents(task, effort = DEFAULT_EFFORT, options = {}) {
   const level = normalizeEffort(effort)
   const { agents } = loadAgents()
   const prompt = buildTaskPrompt(task)
 
-  const results = await Promise.all(
-    agents.map(async (agent) => ({
-      id: agent.id,
-      label: agent.label,
-      // Reported so the UI can say when an agent ignored the chosen effort.
-      effortApplied: agent.supportsEffort,
-      ...(await askOne(ADAPTERS[agent.id], prompt, level, agent.options)),
-    })),
-  )
+  const results = await askEach(agents, () => prompt, level, options)
 
   return { effort: level, results }
 }
@@ -506,7 +636,7 @@ function usable(entries) {
 }
 
 // Round 2: every agent critiques the whole set, concurrently.
-export async function reviewAnswers(task, effort, answers) {
+export async function reviewAnswers(task, effort, answers, options = {}) {
   const level = normalizeEffort(effort)
   const { agents } = loadAgents()
   const pool = usable(answers)
@@ -516,18 +646,11 @@ export async function reviewAnswers(task, effort, answers) {
     return { effort: level, reviews: [], skipped: 'fewer than two answers to compare' }
   }
 
-  const reviews = await Promise.all(
-    agents.map(async (agent) => ({
-      id: agent.id,
-      label: agent.label,
-      effortApplied: agent.supportsEffort,
-      ...(await askOne(
-        ADAPTERS[agent.id],
-        buildReviewPrompt(task, agent.label, pool),
-        level,
-        agent.options,
-      )),
-    })),
+  const reviews = await askEach(
+    agents,
+    (agent) => buildReviewPrompt(task, agent.label, pool),
+    level,
+    options,
   )
 
   return { effort: level, reviews }
@@ -543,7 +666,7 @@ export function pickFinalizer(agents) {
 }
 
 // Round 3: one agent writes the synthesis from the answers plus the reviews.
-export async function finalizeAnswer(task, effort, answers, reviews) {
+export async function finalizeAnswer(task, effort, answers, reviews, { signal } = {}) {
   const level = normalizeEffort(effort)
   const { agents } = loadAgents()
   const finalizer = pickFinalizer(agents)
@@ -557,6 +680,7 @@ export async function finalizeAnswer(task, effort, answers, reviews) {
     buildFinalPrompt(task, answers, reviews),
     level,
     finalizer.options,
+    signal,
   )
 
   return {

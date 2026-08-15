@@ -71,6 +71,35 @@ from the client, so each round appears as soon as it finishes instead of the who
 chain landing at once. The server stays stateless between rounds: the client
 passes the previous round back in.
 
+`/api/ask` and `/api/review` answer in NDJSON — one JSON object per line, an
+`agent` event as each CLI settles and a closing `result` line carrying what the
+endpoint would otherwise have returned whole (see `src/lib/stream.js`). That is
+what lets a single agent appear the moment it lands rather than at the end of its
+round. Validation failures still answer in one plain body with a real status code,
+and `/api/final` is a single agent, so it stayed plain JSON.
+
+## While a question is running
+
+A full run is minutes long, so the sidebar swaps the form for a run log
+(`RunLog.jsx`): a clock counting from submission, the round in progress, and a
+line per agent as it lands — with how long it took, and whether it needed its
+retry. Answers fill into the results column one at a time to match.
+
+**Stop** ends the run: the browser aborts the fetch, which fires `request.signal`
+in the route handler, which kills the CLIs.
+
+The log stays up after the run ends, stopped or finished — it is the account of
+what just happened, and nothing should shove it aside on its own. **Ask another
+question** dismisses it, which is the only thing that brings the form back, with
+the previous question still in it and the cursor already there. The results column
+is untouched until the next question replaces it.
+
+Children are spawned `detached` so each leads its own process group, and are
+killed by group — a CLI that shelled out would otherwise leave the actual work
+running unparented. That also means they no longer die with a Ctrl-C aimed at the
+server's own group, so `agents.js` kills whatever is still running on `SIGINT`,
+`SIGTERM` and `exit`, and suppresses the retry while shutting down.
+
 Round 2 and 3 are skipped when fewer than two agents produced an answer — there is
 nothing to cross-review — and the UI says so.
 
@@ -159,8 +188,9 @@ src/app/api/review/route.js   round 2 — every agent reviews the whole set
 src/app/api/final/route.js    round 3 — one agent writes the synthesis
 src/app/api/learnings/route.js  list + insert
 src/app/api/health/route.js   db reachability, agent roster, CLI availability
-src/components/               AskConsole, AgentAnswer, PendingAnswer, AgentIcon, SidebarHead
+src/components/               AskConsole, AgentAnswer, PendingAnswer, RunLog, AgentIcon, SidebarHead
 src/lib/agents.js             adapters, roster parsing, the three rounds
+src/lib/stream.js             NDJSON responses for the rounds that report per agent
 src/lib/db.js                 mysql2 pool, credentials from the project-root .env
 ```
 

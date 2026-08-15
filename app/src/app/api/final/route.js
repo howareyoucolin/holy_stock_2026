@@ -36,8 +36,12 @@ export async function POST(request) {
     )
   }
 
+  // One agent, so there is nothing to narrate mid-round — but it still takes the
+  // request's signal, so Stop kills the synthesis too.
   try {
-    return NextResponse.json(await finalizeAnswer(task, effort, answers, reviews))
+    return NextResponse.json(
+      await finalizeAnswer(task, effort, answers, reviews, { signal: request.signal }),
+    )
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
