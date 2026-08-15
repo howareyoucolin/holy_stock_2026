@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { askAgents, DEFAULT_EFFORT, EFFORT_LEVELS, loadAgents } from '@/lib/agents'
 import { describeTask, normalizeType, TICKER_PATTERN } from '@/lib/prompts'
 import { ndjsonRun } from '@/lib/stream'
+import { verifyTicker } from '@/lib/tickers'
 
 // child_process needs the Node runtime, not the edge one.
 export const runtime = 'nodejs'
@@ -30,6 +31,27 @@ export async function POST(request) {
     if (!TICKER_PATTERN.test(ticker)) {
       return NextResponse.json(
         { error: `"${ticker}" does not look like a ticker symbol.` },
+        { status: 400 },
+      )
+    }
+
+    /*
+     * The shape test above only proves it could be a ticker; SPCXSS passes it.
+     * Three rounds of agents on a symbol that does not exist costs minutes and
+     * real tokens to be told so, which is why this is checked here rather than
+     * left to the client — bypassing the UI must not bypass the gate.
+     *
+     * A directory that cannot be reached returns `unverified`, and that is let
+     * through: an exchange file server being down is not a reason to refuse
+     * every valuation.
+     */
+    const listing = await verifyTicker(ticker)
+
+    if (listing.status === 'unlisted') {
+      return NextResponse.json(
+        {
+          error: `"${ticker}" is not a US-listed symbol, so no agents were asked. Check the spelling, or use the symbol as it trades.`,
+        },
         { status: 400 },
       )
     }

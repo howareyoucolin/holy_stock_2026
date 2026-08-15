@@ -36,6 +36,29 @@ if (process.env.NODE_ENV !== 'production') {
   globalForDb.__holyStocksPool = pool
 }
 
+/*
+ * Turns a driver-level failure into something actionable.
+ *
+ * There is no local database: the console reaches the remote MySQL through an
+ * SSH tunnel whose near end is on loopback, so a dead tunnel surfaces as
+ * `ECONNREFUSED 127.0.0.1:13307` — which reads like the app is pointed at the
+ * wrong host rather than like the tunnel needs reopening.
+ */
+export function describeDbError(error) {
+  const message = String(error?.message ?? error)
+  const port = process.env.DB_PORT ?? '13307'
+
+  if (error?.code === 'ECONNREFUSED' || message.includes('ECONNREFUSED')) {
+    return `The database tunnel is not running, so the remote MySQL is unreachable on port ${port}. Open it with \`npm run tunnel\` and try again.`
+  }
+
+  if (error?.code === 'ETIMEDOUT' || error?.code === 'PROTOCOL_CONNECTION_LOST') {
+    return `The database connection dropped — the tunnel may have died. Reopen it with \`npm run tunnel\` and try again.`
+  }
+
+  return message
+}
+
 export async function dbInfo() {
   const [rows] = await pool.query('SELECT VERSION() AS version, DATABASE() AS db')
 

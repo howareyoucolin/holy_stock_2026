@@ -78,6 +78,29 @@ what lets a single agent appear the moment it lands rather than at the end of it
 round. Validation failures still answer in one plain body with a real status code,
 and `/api/final` is a single agent, so it stayed plain JSON.
 
+### The ticker gate
+
+`TICKER_PATTERN` only proves a string *could* be a symbol: `SPCXSS` passes it, and
+three rounds of agents on a symbol that does not exist costs minutes and real
+tokens to be told so. Valuations are therefore checked against the Nasdaq Trader
+symbol directory first — the official US listing files, keyless and public, cached
+for 12 hours (`src/lib/tickers.js`). A cold check costs ~170ms, a cached one ~4ms.
+
+`/api/ask` performs the check itself, so bypassing the UI cannot bypass the gate;
+the client calls `/api/ticker` first only so a typo never opens a run log. A
+symbol the directory does not list is refused before any CLI is spawned.
+
+Two deliberate limits: the directory covers **US listings only**, so a foreign
+symbol is refused, and a directory that cannot be downloaded returns `unverified`,
+which is let through — an exchange file server being down is not a reason to
+refuse every valuation.
+
+Round 2 and 3 are skipped when fewer than two agents produced an answer — there is
+nothing to cross-review — and the UI says so.
+
+Mark the synthesising agent with `final=true` in `.agents`; otherwise the first
+available agent in the file does it.
+
 ## While a question is running
 
 A full run is minutes long, so the sidebar swaps the form for a run log
@@ -99,12 +122,6 @@ killed by group — a CLI that shelled out would otherwise leave the actual work
 running unparented. That also means they no longer die with a Ctrl-C aimed at the
 server's own group, so `agents.js` kills whatever is still running on `SIGINT`,
 `SIGTERM` and `exit`, and suppresses the retry while shutting down.
-
-Round 2 and 3 are skipped when fewer than two agents produced an answer — there is
-nothing to cross-review — and the UI says so.
-
-Mark the synthesising agent with `final=true` in `.agents`; otherwise the first
-available agent in the file does it.
 
 ## Which agents get asked
 

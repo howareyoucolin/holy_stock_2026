@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { DEFAULT_EFFORT, EFFORT_LEVELS } from '@/lib/agents'
-import { createStockAnalysis } from '@/lib/db'
+import { createStockAnalysis, describeDbError } from '@/lib/db'
 import { TICKER_PATTERN } from '@/lib/prompts'
 
 export const runtime = 'nodejs'
@@ -69,6 +69,8 @@ export async function POST(request) {
 
     return NextResponse.json({ id, ticker }, { status: 201 })
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    // A raw ECONNREFUSED on loopback is the least useful thing to show here:
+    // the analysis is still on screen and one command makes Publish work again.
+    return NextResponse.json({ error: describeDbError(error) }, { status: 500 })
   }
 }

@@ -147,6 +147,7 @@ export default function AskConsole() {
   const [ranTask, setRanTask] = useState(null)
   const [published, setPublished] = useState(null)
   const [publishing, setPublishing] = useState(false)
+  const [checking, setChecking] = useState(false)
   // Counts resets rather than flagging one, so the effect below fires on every
   // press instead of only the first.
   const [resets, setResets] = useState(0)
@@ -300,6 +301,38 @@ export default function AskConsole() {
         ? { type, ticker: ticker.trim().toUpperCase() }
         : { type, question: question.trim() }
 
+    /*
+     * Check the symbol before anything else. /api/ask enforces this too, but
+     * doing it here keeps a typo from opening a run log and clearing the last
+     * result for a question that is never going to be asked.
+     */
+    let listing = null
+
+    if (task.type === 'valuation') {
+      setChecking(true)
+      setError(null)
+
+      try {
+        const response = await fetch(`/api/ticker?symbol=${encodeURIComponent(task.ticker)}`)
+
+        listing = await response.json()
+      } catch {
+        // Unreachable check: fall through and let the run proceed.
+        listing = { status: 'unverified' }
+      } finally {
+        setChecking(false)
+      }
+
+      if (listing.status === 'unlisted') {
+        setError(
+          listing.error ??
+            `"${task.ticker}" is not a US-listed symbol. No agents were asked — check the spelling.`,
+        )
+
+        return
+      }
+    }
+
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -321,6 +354,14 @@ export default function AskConsole() {
     const options = { signal: controller.signal }
 
     try {
+      // Name the security first: it confirms the symbol resolved to what the
+      // user meant, which a bare ticker in the results does not.
+      if (listing?.status === 'listed') {
+        addLog(`${listing.symbol} — ${listing.name}`)
+      } else if (listing?.status === 'unverified') {
+        addLog(`Could not reach the listing directory — asking about ${task.ticker} anyway`)
+      }
+
       addLog(`Round 1 — asking ${roster.length} agent${roster.length === 1 ? '' : 's'}`)
 
       const round1 = await postRound(
@@ -632,8 +673,9 @@ export default function AskConsole() {
               </>
             )}
 
-            <button type="submit" disabled={!ready || roster.length === 0}>
-              {isValuation ? 'Analyze Stock' : 'Ask AI Agents'}
+            <button type="submit" disabled={!ready || roster.length === 0 || checking}>
+              {checking && <span className="spinner" aria-hidden="true" />}
+              {checking ? 'Checking symbol…' : isValuation ? 'Analyze Stock' : 'Ask AI Agents'}
             </button>
 
             {ignoresEffort.length > 0 && (

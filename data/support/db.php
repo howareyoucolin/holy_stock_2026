@@ -46,13 +46,35 @@ if (!function_exists('connect_pdo')) {
         return new PDO($mysqlDsn, $username, $password, $options);
     }
 
-    // Read the same six settings out of public/config.php. Returns empty strings when
-    // the file is absent so the caller can raise one clear error.
+    // Read the same six settings out of config.php, which sits in a different
+    // place in each of the two layouts this file runs in — the same split
+    // public/bootstrap.php handles for db.php itself:
+    //
+    //   local Docker  /var/www/html/{public,data}   -> public/config.php
+    //   production    ~/site.com/{index.php,data}   -> config.php at the site root,
+    //                                                  because public/ contents ARE
+    //                                                  the web root
+    //
+    // Returns empty strings when neither exists, so the caller can raise one
+    // clear error.
     function db_config_from_file(): array
     {
-        $configFile = dirname(__DIR__, 2) . '/public/config.php';
+        $root = dirname(__DIR__, 2);
 
-        if (!is_file($configFile)) {
+        $candidates = [
+            $root . '/public/config.php',
+            $root . '/config.php',
+        ];
+
+        $configFile = null;
+        foreach ($candidates as $candidate) {
+            if (is_file($candidate)) {
+                $configFile = $candidate;
+                break;
+            }
+        }
+
+        if ($configFile === null) {
             return ['', '3306', '', '', '', 'utf8mb4'];
         }
 
