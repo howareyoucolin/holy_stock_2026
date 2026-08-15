@@ -550,6 +550,218 @@ select:disabled {
   font-weight: 600;
 }
 
+/* ---------- settings ---------- */
+
+/* Sits where the nav tabs used to, so the corner still has one control in it. */
+.gear {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.7);
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: none;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.gear svg {
+  width: 19px;
+  height: 19px;
+}
+
+.gear:hover:not(:disabled) {
+  filter: none;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+
+.gear:active:not(:disabled) {
+  transform: none;
+  filter: none;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+
+/* Native <dialog>: the top layer and backdrop come free, so this only paints. */
+.settings {
+  width: min(30rem, calc(100vw - 2rem));
+  padding: 1.25rem 1.4rem 1.4rem;
+  color: var(--text);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+  border: 0;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--lip), var(--ring), var(--shadow-lg);
+}
+
+.settings::backdrop {
+  background: rgba(10, 5, 10, 0.62);
+  backdrop-filter: blur(2px);
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.settings-head h2 {
+  margin: 0;
+  flex: 1;
+  font-size: 1.05rem;
+}
+
+.settings-close {
+  margin: 0;
+  padding: 0 0.45rem 0.15rem;
+  font-size: 1.35rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.settings-close:hover:not(:disabled) {
+  filter: none;
+  color: var(--text);
+  background: none;
+  box-shadow: none;
+}
+
+.settings-section {
+  margin-top: 1.15rem;
+}
+
+.settings-section h3 {
+  margin: 0 0 0.15rem;
+  font-size: 0.95rem;
+}
+
+.settings-section .muted {
+  margin: 0 0 0.7rem;
+}
+
+.settings-list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-sm);
+}
+
+.settings-row:hover {
+  background: var(--well);
+}
+
+.settings-name {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  font-weight: 550;
+}
+
+/* An unavailable CLI is still listed — you may be about to install it. */
+.settings-note {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--warn);
+}
+
+/* Checkbox underneath, switch on top: keyboard and assistive tech see the real
+   control, everyone else sees the track slide. */
+.switch {
+  position: relative;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.switch-track {
+  display: block;
+  width: 36px;
+  height: 20px;
+  background: var(--well);
+  border-radius: 999px;
+  box-shadow: var(--well-shadow);
+  transition: background 0.15s ease;
+}
+
+.switch-track::after {
+  content: '';
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 3px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.switch input:checked + .switch-track {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.switch input:checked + .switch-track::after {
+  background: #fff;
+  transform: translateX(16px);
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1.3rem;
+}
+
+.settings select {
+  width: 100%;
+}
+
+/* Label text that only assistive tech needs. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-track,
+  .switch-track::after {
+    transition: none;
+  }
+}
+
 /* ---------- publish ---------- */
 
 /* Sits above the final answer, hard right — the results column has no other

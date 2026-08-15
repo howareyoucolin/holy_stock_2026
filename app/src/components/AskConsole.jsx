@@ -205,12 +205,16 @@ export default function AskConsole() {
     }
   }
 
-  useEffect(() => {
+  // Also re-run after the settings dialog saves, so enabling or disabling an
+  // agent is reflected in the pending cards without a reload.
+  function refreshHealth() {
     fetch('/api/health')
       .then((response) => response.json())
       .then(setHealth)
       .catch(() => setHealth({ db: { ok: false, error: 'Health check failed.' } }))
-  }, [])
+  }
+
+  useEffect(refreshHealth, [])
 
   // Leaving the page kills the CLIs too — the request's abort signal is what the
   // route handler passes down to spawn().
@@ -552,7 +556,7 @@ export default function AskConsole() {
     <>
       {/* Left column: navigation plus everything you type. Scrolls on its own. */}
       <aside className="sidebar">
-        <SidebarHead />
+        <SidebarHead onSettingsSaved={refreshHealth} />
 
         <div className="sidebar-body">
           {health && !health.db?.ok && (

@@ -111,18 +111,62 @@ const ADAPTERS = {
      * Offline (`web=false`) is the empty allow-list plus --disable-web-search.
      * Search is the one switch that runs backwards here — Grok has it on by
      * default, where the others are off until you opt in.
+     *
+     * `--always-approve` is then required, and is the same trade cursor makes.
+     * `web_search` runs server-side, but `web_fetch` asks for approval, and
+     * under `--prompt-file` nobody can answer: the call comes back "User
+     * cancelled the execution for tool `web_fetch`" and takes the whole run
+     * with it — `stopReason: cancelled` after one turn, leaving just the
+     * model's opening "I'll pull live prices…" and no answer at all. Narrowing
+     * the tools first is what makes approving them safe: asked to write a file
+     * under these flags it still answers "this session has no file-write or
+     * shell tools", verified.
      */
     args: ({ effort, model, web, promptFile }) => [
       '--prompt-file',
       promptFile,
+      // `plain` concatenates every assistant message, so the answer arrives
+      // glued to the running commentary — "I'll pull live prices…", "Next I'll
+      // lock free cash flow…". The event stream keeps them separable; see
+      // parseOutput.
       '--output-format',
-      'plain',
+      'streaming-json',
       '--reasoning-effort',
       GROK_EFFORT[effort],
       ...(model ? ['--model', model] : []),
-      ...(web ? ['--tools', 'web_search,web_fetch'] : ['--disable-web-search', '--tools', '']),
+      ...(web
+        ? ['--tools', 'web_search,web_fetch', '--always-approve']
+        : ['--disable-web-search', '--tools', '']),
     ],
     usesPromptFile: true,
+    /*
+     * Keeps the last turn's text and drops the narration before it. Every
+     * `tool_call` marks the text so far as talk about what it is *about* to do,
+     * so the answer is whatever it says after the final one. With no tool calls
+     * — an offline agent — nothing is dropped.
+     */
+    parseOutput: (stdout) => {
+      let text = ''
+
+      for (const line of stdout.split('\n')) {
+        if (line.trim() === '') continue
+
+        let event
+
+        try {
+          event = JSON.parse(line)
+        } catch {
+          // A half-written line from a killed run: skip it rather than lose the
+          // whole answer.
+          continue
+        }
+
+        if (event.type === 'text') text += event.data ?? ''
+        else if (event.type === 'tool_call') text = ''
+      }
+
+      return text.trim()
+    },
   },
   cursor: {
     id: 'cursor',
@@ -156,10 +200,10 @@ const ADAPTERS = {
 // Options a .agents line may set, per agent. Anything else is rejected rather
 // than passed through, so the file cannot inject arbitrary flags into argv.
 const ALLOWED_OPTIONS = {
-  claude: ['model', 'tiers', 'final', 'web'],
-  codex: ['model', 'tiers', 'final', 'web'],
-  cursor: ['model', 'tiers', 'final', 'web'],
-  grok: ['model', 'tiers', 'final', 'web'],
+  claude: ['model', 'tiers', 'final', 'web', 'enabled'],
+  codex: ['model', 'tiers', 'final', 'web', 'enabled'],
+  cursor: ['model', 'tiers', 'final', 'web', 'enabled'],
+  grok: ['model', 'tiers', 'final', 'web', 'enabled'],
 }
 
 const TRUTHY = ['true', '1', 'yes', 'on']
@@ -169,6 +213,13 @@ const FALSY = ['false', '0', 'no', 'off']
 // questions, and every CLI refuses network access by default in print mode.
 function wantsWeb(options) {
   const value = String(options?.web ?? '').toLowerCase()
+
+  return !FALSY.includes(value)
+}
+
+// Same shape as web: present-and-falsy turns it off, anything else leaves it on.
+function isEnabled(options) {
+  const value = String(options?.enabled ?? '').toLowerCase()
 
   return !FALSY.includes(value)
 }
@@ -246,7 +297,7 @@ const AGENTS_FILE = () => path.resolve(process.cwd(), '..', '.agents')
  * order. A missing file means "use everything known", so the app still works
  * before the file is created.
  */
-export function loadAgents() {
+export function loadAgents({ includeDisabled = false } = {}) {
   let contents
 
   try {
@@ -313,6 +364,15 @@ export function loadAgents() {
         continue
       }
 
+      if (
+        key === 'enabled' &&
+        value !== '' &&
+        ![...TRUTHY, ...FALSY].includes(value.toLowerCase())
+      ) {
+        problems.push(`${id}: enabled must be true or false (got "${value}")`)
+        continue
+      }
+
       if (key === 'tiers') {
         const bad = value
           .split(',')
@@ -332,11 +392,99 @@ export function loadAgents() {
   }
 
   return {
-    agents: entries.map((entry) => descriptor(ADAPTERS[entry.id], entry.options)),
+    // Disabled lines are dropped here rather than at every call site: asking,
+    // reviewing and finalising all mean "the agents in play".
+    agents: entries
+      .map((entry) => descriptor(ADAPTERS[entry.id], entry.options))
+      .filter((agent) => includeDisabled || agent.enabled),
     unknown,
     problems,
     source: 'file',
   }
+}
+
+/*
+ * Everything the file lists, disabled entries included, plus any supported id it
+ * does not mention at all — the settings dialog needs the full set to offer, not
+ * just the ones currently in play.
+ */
+export function loadRoster() {
+  const { agents, unknown, problems, source } = loadAgents({ includeDisabled: true })
+  const listed = new Set(agents.map((agent) => agent.id))
+
+  const missing = KNOWN_AGENT_IDS.filter((id) => !listed.has(id)).map((id) =>
+    // Absent from the file is the same as switched off, and turning it on is
+    // what writes the line.
+    descriptor(ADAPTERS[id], { enabled: 'false' }),
+  )
+
+  return { agents: [...agents, ...missing], unknown, problems, source }
+}
+
+/*
+ * Applies the settings dialog's two choices to .agents, in place.
+ *
+ * The file is hand-edited and heavily commented, and carries options this
+ * dialog knows nothing about (`model=`, `tiers=`, `web=`). So it is rewritten
+ * line by line rather than regenerated: comments, blank lines, ordering and
+ * unrelated options all survive, and only the `enabled` and `final` tokens on
+ * an agent's own line are touched.
+ *
+ * `enabled` is written only when false, and `final` only on the chosen agent,
+ * so the file stays as terse as someone would have written it by hand.
+ */
+export function saveAgentSettings({ enabled = {}, finalizer = null }) {
+  let lines
+
+  try {
+    lines = readFileSync(AGENTS_FILE(), 'utf8').split('\n')
+  } catch {
+    // No file yet: start from the ids this console supports.
+    lines = KNOWN_AGENT_IDS.slice()
+  }
+
+  const seen = new Set()
+
+  const rewritten = lines.map((rawLine) => {
+    const withoutComment = rawLine.replace(/#.*$/, '')
+    const comment = rawLine.slice(withoutComment.length)
+    const body = withoutComment.trim()
+
+    if (body === '') return rawLine
+
+    const [rawId, ...rest] = body.split(/\s+/)
+    const id = rawId.toLowerCase()
+
+    if (!ADAPTERS[id] || seen.has(id)) return rawLine
+
+    seen.add(id)
+
+    // Every option except the two this dialog owns is carried across untouched.
+    const kept = rest.filter((token) => {
+      const key = token.split('=')[0].toLowerCase()
+
+      return key !== 'enabled' && key !== 'final'
+    })
+
+    const isOn = enabled[id] ?? true
+    const tokens = [id, ...kept]
+
+    if (finalizer === id) tokens.push('final=true')
+    if (!isOn) tokens.push('enabled=false')
+
+    return tokens.join(' ') + comment
+  })
+
+  // An id the file never mentioned only needs a line once it is switched on.
+  for (const id of KNOWN_AGENT_IDS) {
+    if (seen.has(id) || enabled[id] !== true) continue
+
+    rewritten.push(finalizer === id ? `${id} final=true` : id)
+  }
+
+  writeFileSync(AGENTS_FILE(), rewritten.join('\n'), 'utf8')
+
+  return loadRoster()
 }
 
 // Only the fields safe to hand to the browser — never the argv builders.
@@ -351,6 +499,9 @@ function descriptor(adapter, options = {}) {
     // `final=true` in .agents nominates the agent that writes the synthesis.
     isFinalizer: TRUTHY.includes(String(options.final ?? '').toLowerCase()),
     web: wantsWeb(options),
+    // Off only when the line says so, so a file written before this option
+    // existed keeps every agent on.
+    enabled: isEnabled(options),
     options,
   }
 }
@@ -632,6 +783,12 @@ async function askOne(adapter, question, effort, options = {}, signal) {
         readOutputFile: outFile,
         signal,
       })
+
+      // Before worthRetrying, so an adapter that parses its way to nothing is
+      // treated the same as a CLI that printed nothing.
+      if (adapter.parseOutput) {
+        result = { ...result, answer: adapter.parseOutput(result.answer ?? '') }
+      }
     } finally {
       if (promptFile) {
         try {

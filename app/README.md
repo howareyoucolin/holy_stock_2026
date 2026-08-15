@@ -148,6 +148,19 @@ every supported agent".
 
 Copy `.agents.example` to get started.
 
+### The settings dialog
+
+The gear in the sidebar header opens a dialog with the two switches worth having
+at hand: which agents are asked, and which one writes the synthesis. It edits
+`.agents` directly — `enabled=false` for an agent that is off, `final=true` on
+the summariser — so there is no second source of truth to drift. The file is
+rewritten line by line, leaving comments, ordering and options this dialog knows
+nothing about (`model=`, `tiers=`, `web=`) exactly as they were.
+
+Agents whose CLI is missing are still listed, marked *CLI not found*, since you
+may be about to install one. Nominating a disabled agent as summariser is
+refused rather than silently falling back to whoever is first.
+
 ### Web access
 
 Every CLI blocks the network in print/non-interactive mode, so an agent asked
@@ -169,6 +182,22 @@ write a file it announces that it will, and only the approval layer stops it.
 outright; it then answers "this session has no write-file or shell tools". It
 also takes the prompt via `--prompt-file` rather than as an argv value, so the
 question stays out of `ps` like it does for the others.
+
+Grok then needs `--always-approve` on top, for the same reason cursor needs
+`--force`. `web_search` runs server-side, but `web_fetch` asks permission, and
+under `--prompt-file` nobody can answer: the call returns "User cancelled the
+execution for tool `web_fetch`" and takes the run with it — `stopReason:
+cancelled` after a single turn, so the agent reports `done` having printed only
+its opening "I'll pull live prices…". Narrowing the tools first is what makes
+approving the rest safe; writes and shell are still refused under both flags,
+verified. `--max-turns` and `--no-plan` do not help and were ruled out.
+
+Its output needs one more step. `--output-format plain` concatenates every
+assistant message, so the answer arrives glued to the commentary between tool
+calls. The adapter asks for `streaming-json` instead and keeps only the text
+after the final `tool_call` event (`parseOutput` in `agents.js`) — everything
+before that is the model narrating what it is about to do. Adapters without a
+`parseOutput` are untouched.
 
 `--auto-review` was tried first for cursor and does not work under `-p`: its
 classifier prompts for web search rather than auto-running it, and with nobody
