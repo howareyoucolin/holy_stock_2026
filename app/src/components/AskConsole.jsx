@@ -11,10 +11,28 @@ const TYPE_STORAGE_KEY = 'holystocks:type'
 const EFFORT_STORAGE_KEY = 'holystocks:effort'
 const RISK_STORAGE_KEY = 'holystocks:risk'
 
+/*
+ * The tabs offered in the console. Guideline-rule voting is hidden for now —
+ * only the tab is commented out; the type is still built, sent, prompted for and
+ * recorded end to end, so restoring this line brings the whole flow back.
+ *
+ * Nothing else needs changing to hide it: the tab list, the form fields and the
+ * effort floor all key off this array, and the saved-type restore above ignores
+ * a stored value that is not in it, so anyone left on the guideline tab lands
+ * back on General.
+ */
 const TYPES = [
   { value: 'general', label: 'General' },
   { value: 'valuation', label: 'Stock valuation' },
+  // { value: 'guideline', label: 'Guideline rule' },
 ]
+
+/*
+ * A rule that passes becomes standing guidance on every future question, so it
+ * is only worth voting on with the agents actually thinking. The API enforces
+ * this too — this half just stops the form being submittable.
+ */
+const MIN_GUIDELINE_EFFORT = 'high'
 const DEFAULT_EFFORT = 'medium'
 
 // Mirrors EFFORT_LEVELS in src/lib/agents.js, which the API also validates
@@ -142,6 +160,8 @@ export default function AskConsole() {
   const [type, setType] = useState('general')
   const [question, setQuestion] = useState('')
   const [ticker, setTicker] = useState('')
+  const [ruleName, setRuleName] = useState('')
+  const [ruleDescription, setRuleDescription] = useState('')
   const [effort, setEffort] = useState(DEFAULT_EFFORT)
   const [risk, setRisk] = useState('default')
   // idle → asking → reviewing → finalizing → done, or → stopped from any of them
@@ -158,7 +178,11 @@ export default function AskConsole() {
   // change what Publish would save.
   const [ranTask, setRanTask] = useState(null)
   const [published, setPublished] = useState(null)
+  // The logged voting round, and the rule once it has been adopted.
+  const [round, setRound] = useState(null)
+  const [adopted, setAdopted] = useState(null)
   const [publishing, setPublishing] = useState(false)
+  const [adopting, setAdopting] = useState(false)
   const [checking, setChecking] = useState(false)
   // Counts resets rather than flagging one, so the effect below fires on every
   // press instead of only the first.
@@ -315,6 +339,30 @@ export default function AskConsole() {
     return leave
   }
 
+  async function adopt() {
+    if (!round || adopting || adopted) return
+
+    setAdopting(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/votes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: round.id }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) throw new Error(data.error ?? 'Could not adopt the rule.')
+
+      setAdopted(data)
+    } catch (adoptError) {
+      setError(`Could not adopt the rule — ${adoptError.message}`)
+    } finally {
+      setAdopting(false)
+    }
+  }
+
   async function publish() {
     if (!canPublish || publishing || published) return
 
@@ -357,7 +405,14 @@ export default function AskConsole() {
     const task =
       type === 'valuation'
         ? { type, ticker: ticker.trim().toUpperCase(), risk }
-        : { type, question: question.trim(), risk }
+        : type === 'guideline'
+          ? {
+              type,
+              ruleName: ruleName.trim(),
+              ruleDescription: ruleDescription.trim(),
+              risk,
+            }
+          : { type, question: question.trim(), risk }
 
     /*
      * Check the symbol before anything else. /api/ask enforces this too, but
@@ -408,6 +463,8 @@ export default function AskConsole() {
     setElapsed(0)
     setRanTask({ ...task, effort })
     setPublished(null)
+    setRound(null)
+    setAdopted(null)
 
     const options = { signal: controller.signal }
 
@@ -486,6 +543,28 @@ export default function AskConsole() {
       )
 
       setFinal(round3.final)
+
+      // A vote is worth keeping whatever it decided, so the round is logged as
+      // soon as it finishes. Adopting the rule is a separate press.
+      if (task.type === 'guideline') {
+        try {
+          const logged = await postRound('/api/votes', {
+            ruleName: task.ruleName,
+            ruleDescription: task.ruleDescription,
+            answers: round1.results,
+            reviews: round2.reviews,
+          })
+
+          setRound(logged)
+          addLog(
+            `Vote recorded — ${logged.tally.approve} approve, ${logged.tally['approve-with-conditions']} conditional, ${logged.tally.disapprove} against, average confidence ${logged.avgConfidence}`,
+            logged.tally.disapprove > 0 ? 'fail' : 'ok',
+          )
+        } catch (logError) {
+          addLog(`Could not record the vote — ${logError.message}`, 'fail')
+        }
+      }
+
       addLog(
         round3.final
           ? describeAgent(round3.final, 'wrote the final answer').text
@@ -525,7 +604,16 @@ export default function AskConsole() {
   const browsing = mode === 'browse'
   const siteUrl = health?.siteUrl ?? null
   const isValuation = type === 'valuation'
-  const ready = isValuation ? ticker.trim() !== '' : question.trim() !== ''
+  const isGuideline = type === 'guideline'
+  // Effort levels are ordered, so "at least high" is an index comparison.
+  const effortAllowsGuideline =
+    EFFORT_OPTIONS.findIndex((option) => option.value === effort) >=
+    EFFORT_OPTIONS.findIndex((option) => option.value === MIN_GUIDELINE_EFFORT)
+  const ready = isValuation
+    ? ticker.trim() !== ''
+    : isGuideline
+      ? ruleName.trim() !== '' && ruleDescription.trim() !== '' && effortAllowsGuideline
+      : question.trim() !== ''
 
   const phaseLabel = {
     asking: `Round 1 of 3 — ${roster.length} agent${roster.length === 1 ? '' : 's'} answering`,
@@ -739,7 +827,47 @@ export default function AskConsole() {
               </div>
             </div>
 
-            {isValuation ? (
+            {isGuideline ? (
+              <>
+                {!effortAllowsGuideline && (
+                  <p className="alert-warning" role="alert">
+                    <strong>Voting needs {MIN_GUIDELINE_EFFORT} effort or above.</strong> A rule
+                    that passes becomes standing guidance on every future question, so it is
+                    worth the agents thinking properly about it. Raise the effort to vote.
+                  </p>
+                )}
+
+                <label htmlFor="rule-name">Rule name</label>
+                <input
+                  id="rule-name"
+                  ref={promptRef}
+                  type="text"
+                  value={ruleName}
+                  maxLength={120}
+                  disabled={!effortAllowsGuideline}
+                  spellCheck={false}
+                  placeholder="e.g. Unverified metrics"
+                  onChange={(event) => setRuleName(event.target.value)}
+                />
+
+                <label htmlFor="rule-description">Rule</label>
+                <textarea
+                  id="rule-description"
+                  rows={8}
+                  value={ruleDescription}
+                  maxLength={8000}
+                  disabled={!effortAllowsGuideline}
+                  placeholder="Treat a metric that appears in the press release but not in the filing as unverified, and say so."
+                  onChange={(event) => setRuleDescription(event.target.value)}
+                />
+
+                <p className="muted">
+                  Each agent votes approve, approve with conditions, or disapprove, with its
+                  reasoning and a confidence score. Voting the same rule name again shows the
+                  agents what they said last time.
+                </p>
+              </>
+            ) : isValuation ? (
               <>
                 <label htmlFor="ticker">Ticker</label>
                 <input
@@ -775,7 +903,13 @@ export default function AskConsole() {
 
             <button type="submit" disabled={!ready || roster.length === 0 || checking}>
               {checking && <span className="spinner" aria-hidden="true" />}
-              {checking ? 'Checking symbol…' : isValuation ? 'Analyze Stock' : 'Ask AI Agents'}
+              {checking
+                ? 'Checking symbol…'
+                : isGuideline
+                  ? 'Put it to a vote'
+                  : isValuation
+                    ? 'Analyze Stock'
+                    : 'Ask AI Agents'}
             </button>
 
             {ignoresEffort.length > 0 && (
@@ -828,6 +962,24 @@ export default function AskConsole() {
         ) : (
           <>
             {/* Nothing is written to the database until this is pressed. */}
+            {round && (
+              <div className="content-head">
+                <button
+                  type="button"
+                  className={adopted ? 'publish-button is-published' : 'publish-button'}
+                  onClick={adopt}
+                  disabled={adopting || Boolean(adopted)}
+                  title="Add this rule to the standing guidance every agent is given"
+                >
+                  {adopted
+                    ? `Adopted · rule #${adopted.ruleId}`
+                    : adopting
+                      ? 'Adopting…'
+                      : 'Adopt this rule'}
+                </button>
+              </div>
+            )}
+
             {hasAnalysis && (
               <div className="content-head">
                 <button

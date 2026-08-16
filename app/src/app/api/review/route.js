@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { DEFAULT_EFFORT, EFFORT_LEVELS, reviewAnswers } from '@/lib/agents'
+import { hasTaskSubject } from '@/lib/prompts'
 import { ndjsonRun } from '@/lib/stream'
 
 // child_process needs the Node runtime, not the edge one.
@@ -21,7 +22,7 @@ export async function POST(request) {
   const task = body?.task ?? { type: 'general', question: String(body?.question ?? '') }
   const answers = Array.isArray(body?.answers) ? body.answers : []
 
-  if (!task || (String(task.question ?? '').trim() === '' && String(task.ticker ?? '').trim() === '')) {
+  if (!hasTaskSubject(task)) {
     return NextResponse.json({ error: 'A task is required.' }, { status: 400 })
   }
 

@@ -529,6 +529,22 @@ select:disabled {
   box-shadow: none;
 }
 
+/* Disabled inputs get the same treatment the effort select already has, so a
+   gated form reads as gated instead of silently refusing what you type. */
+.card-flat textarea:disabled,
+.card-flat input[type='text']:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* The labels dim with their controls, or the group reads as half-available. */
+.card-flat label:has(+ input:disabled),
+.card-flat label:has(+ textarea:disabled) {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
 /* Solid fill, no gradient or lit edge, and no press displacement. */
 .card-flat button {
   background: var(--accent);
@@ -1530,4 +1546,30 @@ code {
   border: 0;
   /* The site is dark; this stops a white flash before it paints. */
   background: var(--bg);
+}
+
+/* ---------- alerts ---------- */
+
+/*
+ * Bootstrap's alert-warning, in this theme's colours: the same shape — a padded,
+ * rounded panel with a matching border and text — using the amber already in the
+ * palette (--warn, from the VS Code theme's gutter.modified) rather than
+ * Bootstrap's light-mode #fff3cd, which would glare on a dark surface.
+ */
+.alert-warning {
+  margin: 0 0 0.25rem;
+  padding: 0.8rem 1rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--warn) 78%, #fff);
+  background: color-mix(in srgb, var(--warn) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 42%, transparent);
+  border-radius: var(--radius);
+}
+
+.alert-warning strong {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: var(--warn);
+  font-weight: 650;
 }

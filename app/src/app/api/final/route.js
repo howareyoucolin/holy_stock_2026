@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { DEFAULT_EFFORT, EFFORT_LEVELS, finalizeAnswer } from '@/lib/agents'
+import { hasTaskSubject } from '@/lib/prompts'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -19,7 +20,7 @@ export async function POST(request) {
   const answers = Array.isArray(body?.answers) ? body.answers : []
   const reviews = Array.isArray(body?.reviews) ? body.reviews : []
 
-  if (!task || (String(task.question ?? '').trim() === '' && String(task.ticker ?? '').trim() === '')) {
+  if (!hasTaskSubject(task)) {
     return NextResponse.json({ error: 'A task is required.' }, { status: 400 })
   }
 

@@ -106,3 +106,97 @@ export async function createLearning({
 
   return result.insertId
 }
+
+/* ---------- guideline rules ---------- */
+
+/*
+ * Earlier rounds on the same rule name, oldest first, so a re-vote can be a
+ * reconsideration rather than a fresh start. Capped: the point is what was
+ * objected to last time, not the whole history of the idea.
+ */
+export async function pastVotingRounds(name, limit = 3) {
+  const [rows] = await pool.query(
+    `SELECT id, name, description, voting_result, avg_confidence_level, created_at
+     FROM guideline_rule_voting_log
+     WHERE name = ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`,
+    [name, limit],
+  )
+
+  // mysql2 hands back JSON columns already parsed, but a hand-written row could
+  // still be a string.
+  return rows
+    .map((row) => ({
+      ...row,
+      votes: typeof row.voting_result === 'string'
+        ? JSON.parse(row.voting_result)?.votes ?? []
+        : row.voting_result?.votes ?? [],
+    }))
+    .reverse()
+}
+
+/** One completed round of voting. Appended, never updated. */
+export async function saveVotingRound({ name, description, result, avgConfidence }) {
+  const [inserted] = await pool.execute(
+    `INSERT INTO guideline_rule_voting_log
+       (name, description, voting_result, avg_confidence_level, created_at)
+     VALUES (?, ?, CAST(? AS JSON), ?, NOW())`,
+    [name, description, JSON.stringify(result), avgConfidence],
+  )
+
+  return inserted.insertId
+}
+
+/*
+ * Promotes a rule to the set that is actually applied. Keyed by name, so
+ * approving a refined rule replaces the wording in force rather than leaving two
+ * near-identical rules to be injected into every future prompt.
+ */
+export async function approveRule({ name, description, result, avgConfidence }) {
+  const [saved] = await pool.execute(
+    `INSERT INTO guideline_rules
+       (name, description, voting_result, avg_confidence_level, approved_at)
+     VALUES (?, ?, CAST(? AS JSON), ?, NOW())
+     ON DUPLICATE KEY UPDATE
+       description = VALUES(description),
+       voting_result = VALUES(voting_result),
+       avg_confidence_level = VALUES(avg_confidence_level),
+       approved_at = NOW()`,
+    [name, description, JSON.stringify(result), avgConfidence],
+  )
+
+  return saved.insertId
+}
+
+/** One logged round, for promoting it later without re-sending the ballots. */
+export async function votingRound(id) {
+  const [rows] = await pool.execute(
+    `SELECT id, name, description, voting_result, avg_confidence_level
+     FROM guideline_rule_voting_log
+     WHERE id = ?
+     LIMIT 1`,
+    [id],
+  )
+
+  const row = rows[0]
+
+  if (!row) return null
+
+  return {
+    ...row,
+    voting_result:
+      typeof row.voting_result === 'string' ? JSON.parse(row.voting_result) : row.voting_result,
+  }
+}
+
+/** The rules in force, for handing to the agents as standing guidance. */
+export async function activeRules() {
+  const [rows] = await pool.query(
+    `SELECT id, name, description, avg_confidence_level, approved_at
+     FROM guideline_rules
+     ORDER BY approved_at DESC, id DESC`,
+  )
+
+  return rows
+}

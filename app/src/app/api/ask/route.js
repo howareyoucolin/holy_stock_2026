@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { askAgents, DEFAULT_EFFORT, EFFORT_LEVELS, loadAgents } from '@/lib/agents'
 import { describeTask, normalizeRisk, normalizeType, TICKER_PATTERN } from '@/lib/prompts'
+import { pastVotingRounds } from '@/lib/db'
 import { ndjsonRun } from '@/lib/stream'
 import { verifyTicker } from '@/lib/tickers'
 
@@ -9,6 +10,16 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const MAX_QUESTION_LENGTH = 4000
+const MAX_RULE_NAME_LENGTH = 120
+const MAX_RULE_LENGTH = 8000
+
+/*
+ * A rule that passes becomes standing guidance on every future question, so the
+ * bar is deliberately higher than for a one-off answer: agents get the effort to
+ * actually think about it, or they do not vote. The console disables the form
+ * below `high` too; this is the half that a caller cannot skip.
+ */
+const MIN_GUIDELINE_EFFORT = 'high'
 
 export async function POST(request) {
   let body
@@ -22,6 +33,8 @@ export async function POST(request) {
   const type = normalizeType(body?.type)
   const question = String(body?.question ?? '').trim()
   const ticker = String(body?.ticker ?? '').trim().toUpperCase()
+  const ruleName = String(body?.ruleName ?? '').trim()
+  const ruleDescription = String(body?.ruleDescription ?? '').trim()
 
   if (type === 'valuation') {
     if (ticker === '') {
@@ -55,6 +68,28 @@ export async function POST(request) {
         { status: 400 },
       )
     }
+  } else if (type === 'guideline') {
+    if (ruleName === '') {
+      return NextResponse.json({ error: 'A short rule name is required.' }, { status: 400 })
+    }
+
+    if (ruleName.length > MAX_RULE_NAME_LENGTH) {
+      return NextResponse.json(
+        { error: `The rule name is too long (max ${MAX_RULE_NAME_LENGTH} characters).` },
+        { status: 400 },
+      )
+    }
+
+    if (ruleDescription === '') {
+      return NextResponse.json({ error: 'The rule needs a description to vote on.' }, { status: 400 })
+    }
+
+    if (ruleDescription.length > MAX_RULE_LENGTH) {
+      return NextResponse.json(
+        { error: `The rule is too long (max ${MAX_RULE_LENGTH} characters).` },
+        { status: 400 },
+      )
+    }
   } else {
     if (question === '') {
       return NextResponse.json({ error: 'A question is required.' }, { status: 400 })
@@ -70,7 +105,14 @@ export async function POST(request) {
 
   // Anything unrecognised falls back to `default`, which adds nothing to the
   // prompts — so a bad value can only ever be the quieter option.
-  const task = { type, question, ticker, risk: normalizeRisk(body?.risk) }
+  const task = {
+    type,
+    question,
+    ticker,
+    ruleName,
+    ruleDescription,
+    risk: normalizeRisk(body?.risk),
+  }
 
   const requested = String(body?.effort ?? DEFAULT_EFFORT)
 
@@ -79,6 +121,27 @@ export async function POST(request) {
       { error: `Effort must be one of: ${EFFORT_LEVELS.join(', ')}.` },
       { status: 400 },
     )
+  }
+
+  if (type === 'guideline') {
+    const floor = EFFORT_LEVELS.indexOf(MIN_GUIDELINE_EFFORT)
+
+    if (EFFORT_LEVELS.indexOf(requested) < floor) {
+      return NextResponse.json(
+        {
+          error: `Voting on a guideline rule needs ${MIN_GUIDELINE_EFFORT} effort or above — a rule that passes applies to every future question.`,
+        },
+        { status: 400 },
+      )
+    }
+
+    // Earlier rounds on this name, so the agents reconsider rather than start
+    // over. A database that cannot be reached is not a reason to block the vote.
+    try {
+      task.history = await pastVotingRounds(ruleName)
+    } catch {
+      task.history = []
+    }
   }
 
   // An empty roster means every line in .agents was blank, commented out, or an
