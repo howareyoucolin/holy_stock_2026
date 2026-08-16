@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 $pageTitle ??= 'HolyStocks';
-$headCount ??= null;
 ?>
 <!doctype html>
 <html lang="en">
@@ -21,11 +20,14 @@ $headCount ??= null;
             <strong>HolyStocks</strong>
             <span>Stock analyses</span>
         </a>
-        <?php if ($headCount !== null): ?>
-            <span class="head-count">
-                <?= (int) $headCount ?> <?= (int) $headCount === 1 ? 'analysis' : 'analyses' ?>
-            </span>
-        <?php endif; ?>
+        <nav class="site-nav">
+            <?php
+            $here = basename((string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH));
+            $onBlog = in_array($here, ['blog.php', 'post.php'], true);
+            ?>
+            <a href="/"<?= $onBlog ? '' : ' aria-current="page"' ?>>Analyses</a>
+            <a href="/blog.php"<?= $onBlog ? ' aria-current="page"' : '' ?>>Blog</a>
+        </nav>
     </div>
 </header>
 

@@ -46,7 +46,6 @@ SQL
 }
 
 $pageTitle = 'HolyStocks';
-$headCount = $dbError === null ? $total : null;
 
 require __DIR__ . '/parts/header.php';
 ?>

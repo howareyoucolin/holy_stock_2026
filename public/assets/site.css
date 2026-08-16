@@ -136,10 +136,40 @@ a:hover {
   color: rgba(255, 255, 255, 0.6);
 }
 
-.head-count {
+/* Two destinations, marked the way the console marks its own tabs. Pushed right
+   by the auto margin, so the brand and the nav sit at opposite ends. */
+.site-nav {
+  display: flex;
+  gap: 1.3rem;
   margin-left: auto;
-  font-size: 0.82rem;
-  color: rgba(255, 255, 255, 0.65);
+}
+
+.site-nav a {
+  position: relative;
+  padding: 0.3rem 0.1rem 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 550;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.site-nav a:hover {
+  color: #fff;
+  text-decoration: none;
+}
+
+.site-nav a[aria-current='page'] {
+  color: #fff;
+}
+
+.site-nav a[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent-2);
 }
 
 /* ---------- list ---------- */
@@ -413,4 +443,159 @@ code {
   .card:hover {
     transform: none;
   }
+}
+
+/* ---------- blog ---------- */
+
+.page-title {
+  margin: 0 0 1.25rem;
+  font-size: 1.9rem;
+  letter-spacing: -0.02em;
+}
+
+.post-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 650;
+  color: #fff;
+}
+
+/* Category filter row. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.75rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.32rem 0.8rem;
+  font-size: 0.85rem;
+  color: var(--text-soft);
+  background: var(--well);
+  border-radius: 999px;
+  box-shadow: var(--ring);
+}
+
+.chip:hover {
+  text-decoration: none;
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.chip-on {
+  color: #fff;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.chip-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.chip-on .chip-count {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+/* ---------- post body ---------- */
+
+/*
+ * Everything under .prose is rendered from markdown by parts/markdown.php, which
+ * emits only the tags styled here — an agent cannot introduce others.
+ */
+.prose {
+  max-width: 44rem;
+}
+
+.prose h2,
+.prose h3,
+.prose h4 {
+  margin: 2rem 0 0.6rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.prose h2 {
+  font-size: 1.32rem;
+}
+
+.prose h3 {
+  font-size: 1.12rem;
+}
+
+.prose h4 {
+  font-size: 1rem;
+  color: var(--text-soft);
+}
+
+.prose p {
+  margin: 0 0 1.05rem;
+  color: var(--text-soft);
+}
+
+.prose .prose-list {
+  margin: 0 0 1.05rem;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.prose .prose-list li {
+  color: var(--text-soft);
+}
+
+.prose .prose-list li::marker {
+  color: var(--accent);
+}
+
+.prose blockquote {
+  margin: 0 0 1.05rem;
+  padding: 0.2rem 0 0.2rem 1.1rem;
+  border-left: 3px solid var(--accent);
+}
+
+.prose blockquote p {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+.prose hr {
+  margin: 2rem 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.prose .code {
+  margin: 0 0 1.05rem;
+  padding: 0.9rem 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  color: var(--text-soft);
+  background: var(--well);
+  border-radius: var(--radius);
+  box-shadow: var(--well-shadow);
+  overflow-x: auto;
+}
+
+.prose .code code {
+  padding: 0;
+  background: none;
+}
+
+.prose a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
