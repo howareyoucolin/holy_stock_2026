@@ -62,9 +62,13 @@ export default function RunLog({ entries, elapsed, phaseLabel, status, onStop, o
           Stop
         </button>
       ) : (
-        <button type="button" className="run-again" onClick={onReset}>
-          Ask another question
-        </button>
+        // Asking again belongs to the ask screen, so browse mode omits it and
+        // shows the log alone.
+        onReset && (
+          <button type="button" className="run-again" onClick={onReset}>
+            Ask another question
+          </button>
+        )
       )}
     </section>
   )

@@ -58,6 +58,12 @@
   --radius: 12px;
   --radius-lg: 16px;
   --radius-sm: 9px;
+
+  /* Height of the pinned header, sitting just above .site-head's 58.3px on the
+     public site (public/assets/site.css) so the two edges read as level once the
+     site's own bottom border is in the frame. Fractional on purpose — it is a
+     half-pixel nudge, which lands on a whole device pixel at 2x. */
+  --head-h: 58.5px;
 }
 
 * {
@@ -162,6 +168,7 @@ body::before {
   position: sticky;
   top: 0;
   z-index: 20;
+  min-height: var(--head-h);
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem 1.25rem;
@@ -191,7 +198,7 @@ body::before {
 }
 
 .brand-text strong {
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 650;
   letter-spacing: -0.01em;
   color: #fff;
@@ -850,9 +857,11 @@ select:disabled {
   display: grid;
   align-content: start;
   gap: 0.34rem;
-  /* Tall enough for a full three-round run, capped so the form's return does
-     not push the rest of the sidebar off-screen. */
-  max-height: 15rem;
+  /* Grows with the run rather than clipping it early: a four-agent run is a
+     dozen lines, and reading them should not mean scrolling a small window
+     inside a scrolling sidebar. Capped just under the viewport so the log's own
+     header and buttons stay on screen with it. */
+  max-height: 75vh;
   margin: 0;
   padding: 0;
   overflow-y: auto;
@@ -1467,4 +1476,58 @@ code {
   .row:hover {
     transform: none;
   }
+}
+
+/* ---------- browse mode ---------- */
+
+/*
+ * The sidebar collapses to a strip holding the wordmark and one way back, and
+ * the results column becomes the published site. The grid lives on .shell, which
+ * is rendered by layout.jsx, so AskConsole publishes the mode as a data
+ * attribute for these rules to read.
+ */
+@media (min-width: 900px) {
+  .shell[data-mode='browse'] {
+    grid-template-columns: 15rem 1fr;
+  }
+}
+
+.shell[data-mode='browse'] .sidebar-head {
+  /* No controls left to sit opposite the wordmark. */
+  justify-content: flex-start;
+}
+
+/* Icons live together at the right of the head. */
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+/* Browse mode: the sidebar body carries the run log, so it starts at the top
+   like everything else in that column. The way back lives in the header now. */
+.no-log {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  background: var(--well);
+  border-radius: var(--radius);
+  box-shadow: var(--well-shadow);
+}
+
+/* The frame fills the column with no padding of its own. */
+.content-browse {
+  padding: 0;
+  overflow: hidden;
+}
+
+.site-frame {
+  width: 100%;
+  height: 100%;
+  min-height: 60vh;
+  border: 0;
+  /* The site is dark; this stops a white flash before it paints. */
+  background: var(--bg);
 }

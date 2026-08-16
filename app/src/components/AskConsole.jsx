@@ -163,6 +163,18 @@ export default function AskConsole() {
   // Counts resets rather than flagging one, so the effect below fires on every
   // press instead of only the first.
   const [resets, setResets] = useState(0)
+  // ask → the agent console. browse → the published site in an iframe, with the
+  // sidebar collapsed to a strip.
+  const [mode, setMode] = useState('ask')
+  /*
+   * Bumped by the reload button. The site sends `cache-control: max-age=600`, so
+   * pointing the frame at the same URL can quietly serve the copy from ten
+   * minutes ago — a changed query string is what guarantees a fresh fetch, and
+   * changing `src` is what makes the frame go and get it.
+   *
+   * 0 means untouched, so the first view uses the bare URL.
+   */
+  const [frameNonce, setFrameNonce] = useState(0)
 
   // Refs, not state: the log appenders read these from inside a promise chain
   // that would otherwise close over a stale render.
@@ -246,6 +258,20 @@ export default function AskConsole() {
   // Leaving the page kills the CLIs too — the request's abort signal is what the
   // route handler passes down to spawn().
   useEffect(() => () => abortRef.current?.abort(), [])
+
+  /*
+   * The two-column grid is defined on .shell, which is rendered by layout.jsx
+   * above this component. Publishing the mode as an attribute lets the CSS
+   * collapse the first column without lifting this state into a server
+   * component or prop-drilling through the layout.
+   */
+  useEffect(() => {
+    const shell = document.querySelector('.shell')
+
+    shell?.setAttribute('data-mode', mode)
+
+    return () => shell?.removeAttribute('data-mode')
+  }, [mode])
 
   function addLog(text, tone) {
     seqRef.current += 1
@@ -496,6 +522,8 @@ export default function AskConsole() {
   const problems = health?.problems ?? []
   const ignoresEffort = roster.filter((agent) => !agent.supportsEffort)
   const busy = phase === 'asking' || phase === 'reviewing' || phase === 'finalizing'
+  const browsing = mode === 'browse'
+  const siteUrl = health?.siteUrl ?? null
   const isValuation = type === 'valuation'
   const ready = isValuation ? ticker.trim() !== '' : question.trim() !== ''
 
@@ -584,9 +612,32 @@ export default function AskConsole() {
     <>
       {/* Left column: navigation plus everything you type. Scrolls on its own. */}
       <aside className="sidebar">
-        <SidebarHead onSettingsSaved={refreshHealth} />
+        <SidebarHead
+          mode={mode}
+          onBrowse={() => setMode('browse')}
+          onAsk={() => setMode('ask')}
+          onReloadSite={() => setFrameNonce(Date.now())}
+          onSettingsSaved={refreshHealth}
+        />
 
         <div className="sidebar-body">
+          {browsing ? (
+            // The run keeps going while you read the site, so the log comes
+            // along. Stop is still on it; asking again is not, since that needs
+            // the form back.
+            log.length > 0 ? (
+              <RunLog
+                entries={log}
+                elapsed={elapsed}
+                phaseLabel={phaseLabel}
+                status={busy ? 'running' : phase === 'stopped' ? 'stopped' : 'done'}
+                onStop={stop}
+              />
+            ) : (
+              <p className="no-log">No log yet. Ask a question and its progress shows up here.</p>
+            )
+          ) : (
+          <>
           {health && !health.db?.ok && (
             <p className="banner">
               <strong>Database unreachable.</strong> {health.db?.error ?? 'Unknown error.'} Open
@@ -736,10 +787,36 @@ export default function AskConsole() {
             )}
           </form>
           )}
+          </>
+          )}
         </div>
       </aside>
 
-      {/* Right column: full-height results panel with its own scrollbar. */}
+      {/* Right column: the published site while browsing, otherwise the results
+          panel with its own scrollbar. */}
+      {browsing ? (
+        <main className="content content-browse">
+          {siteUrl ? (
+            <iframe
+              className="site-frame"
+              // Keyed as well as re-sourced: React would otherwise reuse the
+              // element and some browsers treat that as a history entry rather
+              // than a load.
+              key={frameNonce}
+              src={frameNonce ? `${siteUrl}?t=${frameNonce}` : siteUrl}
+              title="The published HolyStocks site"
+              // Same-origin is deliberately withheld: the frame is another site
+              // and has no business reaching into this one.
+              sandbox="allow-scripts allow-popups allow-forms"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="placeholder">
+              <p>No published site is configured. Set PUBLISH_ENDPOINT in .env.</p>
+            </div>
+          )}
+        </main>
+      ) : (
       <main className="content" aria-live="polite">
         {phase === 'idle' ? (
           <div className="placeholder">
@@ -813,6 +890,7 @@ export default function AskConsole() {
           </>
         )}
       </main>
+      )}
     </>
   )
 }
